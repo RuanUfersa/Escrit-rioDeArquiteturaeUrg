@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream: #faf6ef;
+
+  --color-sand-50: #f7f2e9;
+  --color-sand-100: #efe7d8;
+  --color-sand-200: #e3d6bf;
+  --color-sand-300: #d0bd9b;
+  --color-sand-400: #b79e75;
+  --color-sand-500: #9f8358;
+  --color-sand-600: #806744;
+  --color-sand-700: #665138;
+  --color-sand-800: #54432f;
+  --color-sand-900: #43362a;
+  --color-sand-950: #2b221a;
+
+  --color-terra-50: #fbf1ea;
+  --color-terra-100: #f6dfd2;
+  --color-terra-200: #eebea3;
+  --color-terra-300: #e39973;
+  --color-terra-400: #d47447;
+  --color-terra-500: #c15929;
+  --color-terra-600: #a84622;
+  --color-terra-700: #88371e;
+  --color-terra-800: #6f301f;
+  --color-terra-900: #5c2b1f;
+  --color-terra-950: #33130c;
+
+  --color-oliva-50: #f4f5ec;
+  --color-oliva-100: #e5e8d3;
+  --color-oliva-200: #cbd3aa;
+  --color-oliva-300: #acb97b;
+  --color-oliva-400: #8fa055;
+  --color-oliva-500: #72853e;
+  --color-oliva-600: #596a2e;
+  --color-oliva-700: #465226;
+  --color-oliva-800: #3a4323;
+  --color-oliva-900: #333a22;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-cream);
+  color: var(--color-sand-900);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
