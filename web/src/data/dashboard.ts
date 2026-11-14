@@ -32,6 +32,7 @@ export interface DashboardData {
   valores: { total: number; recebido: number; aReceber: number };
   progressoMedio: number;
   proximosVencimentos: ProximoVencimento[];
+  vencidos: ProximoVencimento[];
   proximasAtividades: number;
 }
 
@@ -75,13 +76,19 @@ export function buildDashboard(projects: Project[]): DashboardData {
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
   const proximosVencimentos: ProximoVencimento[] = [];
+  const vencidos: ProximoVencimento[] = [];
   for (const p of projects) {
-    for (const par of p.financeiro.parcelas) {
-      if (par.status === 'pago') continue;
+    const cobrancas = [
+      ...(p.financeiro.sinal.status === 'pago'
+        ? []
+        : [{ descricao: 'Sinal 15% — assinatura', vencimento: p.contrato.dataAssinatura, valor: p.financeiro.sinal.valor }]),
+      ...p.financeiro.parcelas.filter((par) => par.status !== 'pago'),
+    ];
+    for (const par of cobrancas) {
       const v = new Date(par.vencimento + 'T00:00:00');
       const diasAte = Math.round((v.getTime() - hoje.getTime()) / 86400000);
       if (diasAte > 7) continue;
-      proximosVencimentos.push({
+      const item: ProximoVencimento = {
         projectId: p.id,
         projectNome: p.nome,
         clienteNome: p.clienteNome,
@@ -89,10 +96,13 @@ export function buildDashboard(projects: Project[]): DashboardData {
         vencimento: par.vencimento,
         valor: par.valor,
         diasAte,
-      });
+      };
+      // Atrasados ficam numa lista própria, fora de "próximos 7 dias".
+      (diasAte < 0 ? vencidos : proximosVencimentos).push(item);
     }
   }
   proximosVencimentos.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+  vencidos.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 
   const proximasAtividades = projects.reduce(
     (acc, p) =>
@@ -100,5 +110,5 @@ export function buildDashboard(projects: Project[]): DashboardData {
     0,
   );
 
-  return { totalProjetos, porStatus, porTipo, valores, progressoMedio, proximosVencimentos, proximasAtividades };
+  return { totalProjetos, porStatus, porTipo, valores, progressoMedio, proximosVencimentos, vencidos, proximasAtividades };
 }
