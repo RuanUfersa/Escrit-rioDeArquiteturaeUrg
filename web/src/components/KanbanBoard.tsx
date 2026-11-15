@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import type { KanbanStatus, Project, ProjectType } from '../types';
-import { KANBAN_COLUMNS, PROJECT_TYPE_LABELS } from '../types';
+import type { KanbanColumn, KanbanStatus, Project, ProjectType } from '../types';
+import { PROJECT_TYPE_LABELS } from '../types';
 import { fmtDate, proximoItem, scopePct } from '../lib/format';
 
 interface Props {
   projects: Project[];
   codes: Map<string, string>;
+  columns: KanbanColumn[];
+  onAddColumn: (label: string) => void;
+  onMoveColumn: (id: string, dir: -1 | 1) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onMove: (id: string, to: KanbanStatus) => void;
@@ -13,7 +16,7 @@ interface Props {
 }
 
 // Cor do filete de cada coluna, do mais neutro ao concluído.
-const COL_BAR: Record<KanbanStatus, string> = {
+const COL_BAR: Record<string, string> = {
   novo: 'bg-sand-300',
   em_levantamento: 'bg-sand-400',
   em_projeto: 'bg-terra-400',
@@ -28,12 +31,13 @@ const TYPE_COLOR: Record<ProjectType, string> = {
   interiores: 'text-sand-700',
 };
 
-const COL_LABEL_CURTO: Partial<Record<KanbanStatus, string>> = {
+const COL_LABEL_CURTO: Record<string, string> = {
   detalhamento_entrega: 'Detalhamento',
 };
 
 function Card({
   p,
+  columns,
   code,
   selected,
   dragging,
@@ -45,6 +49,7 @@ function Card({
   onDragEnd,
 }: {
   p: Project;
+  columns: KanbanColumn[];
   code: string;
   selected: boolean;
   dragging: boolean;
@@ -55,7 +60,7 @@ function Card({
   onDragStart?: () => void;
   onDragEnd?: () => void;
 }) {
-  const idx = KANBAN_COLUMNS.findIndex((c) => c.id === p.statusKanban);
+  const idx = columns.findIndex((c) => c.id === p.statusKanban);
   const pct = scopePct(p);
   const prox = proximoItem(p);
   const btn = touch
@@ -89,7 +94,7 @@ function Card({
       <div className="border-t border-dashed border-sand-200 pt-2 text-[11px] text-sand-700">
         {prox ? (
           <>
-            Próximo: <b className="font-semibold text-sand-950">{prox.titulo}{prox.scheduledAt ? ` · ${fmtDate(prox.scheduledAt).slice(0, 5)}` : ''}</b>
+            Próximo: <b className="font-semibold text-sand-950">{prox.titulo}{prox.scheduledAt ? ` · ${fmtDate(prox.scheduledAt).slice(0, 5)}${prox.horaAgendada ? ` ${prox.horaAgendada}` : ''}` : ''}</b>
           </>
         ) : (
           <b className="font-semibold text-oliva-600">Escopo concluído</b>
@@ -102,16 +107,16 @@ function Card({
           </button>
         )}
         <button
-          disabled={idx === 0}
-          onClick={() => onMove(p.id, KANBAN_COLUMNS[idx - 1].id)}
+          disabled={idx <= 0}
+          onClick={() => idx > 0 && onMove(p.id, columns[idx - 1].id)}
           aria-label="Voltar estágio"
           className={`${btn} ${touch ? '' : 'ml-auto'} border border-sand-300 text-sand-800 hover:bg-sand-100 disabled:opacity-30`}
         >
           {touch ? '← Voltar' : '←'}
         </button>
         <button
-          disabled={idx === KANBAN_COLUMNS.length - 1}
-          onClick={() => onMove(p.id, KANBAN_COLUMNS[idx + 1].id)}
+          disabled={idx < 0 || idx === columns.length - 1}
+          onClick={() => idx >= 0 && idx < columns.length - 1 && onMove(p.id, columns[idx + 1].id)}
           aria-label="Avançar estágio"
           className={`${btn} ${touch ? 'bg-sand-950 text-cream hover:bg-sand-900' : 'border border-sand-300 text-sand-800 hover:bg-sand-100'} disabled:opacity-30`}
         >
@@ -122,22 +127,34 @@ function Card({
   );
 }
 
-export default function KanbanBoard({ projects, codes, selectedId, onSelect, onMove, onDelete }: Props) {
+export default function KanbanBoard({ projects, codes, columns, onAddColumn, onMoveColumn, selectedId, onSelect, onMove, onDelete }: Props) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<KanbanStatus | null>(null);
   const [stage, setStage] = useState<KanbanStatus>(() => {
-    const first = KANBAN_COLUMNS.find((c) => projects.some((p) => p.statusKanban === c.id));
-    return first?.id ?? 'novo';
+    const first = columns.find((c) => projects.some((p) => p.statusKanban === c.id));
+    return first?.id ?? columns[0]?.id ?? 'novo';
   });
 
   const stageItems = projects.filter((p) => p.statusKanban === stage);
+  const [editando, setEditando] = useState(false);
 
   return (
     <>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setEditando((v) => !v)}
+          aria-expanded={editando}
+          className="h-9 rounded-lg border border-sand-300 px-3 text-xs font-medium text-sand-800 hover:bg-sand-100"
+        >
+          {editando ? 'Fechar edição de colunas' : 'Editar colunas'}
+        </button>
+      </div>
+      {editando && <ColumnEditor columns={columns} onAdd={onAddColumn} onMove={onMoveColumn} />}
+
       {/* Celular e tablet: um estágio por vez, troca pelos botões */}
       <div className="flex flex-col gap-3 lg:hidden">
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6" role="tablist" aria-label="Estágios">
-          {KANBAN_COLUMNS.map((c) => {
+          {columns.map((c) => {
             const on = c.id === stage;
             const n = projects.filter((p) => p.statusKanban === c.id).length;
             return (
@@ -157,6 +174,7 @@ export default function KanbanBoard({ projects, codes, selectedId, onSelect, onM
           <Card
             key={p.id}
             p={p}
+            columns={columns}
             code={codes.get(p.id) ?? ''}
             selected={selectedId === p.id}
             dragging={false}
@@ -178,8 +196,8 @@ export default function KanbanBoard({ projects, codes, selectedId, onSelect, onM
 
       {/* Computador: seis colunas com arrastar e soltar */}
       <div className="hidden overflow-x-auto pb-1.5 lg:block">
-        <div className="grid min-w-[1240px] grid-cols-6 gap-3.5">
-          {KANBAN_COLUMNS.map((col) => {
+        <div className="grid gap-3.5" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(200px, 1fr))`, minWidth: `${columns.length * 214}px` }}>
+          {columns.map((col) => {
             const items = projects.filter((p) => p.statusKanban === col.id);
             const isDropTarget = dragId !== null && overCol === col.id;
             return (
@@ -205,11 +223,12 @@ export default function KanbanBoard({ projects, codes, selectedId, onSelect, onM
                   </h2>
                   <span className="font-mono text-[11px] text-sand-700">{items.length}</span>
                 </div>
-                <div className={`h-0.5 rounded ${COL_BAR[col.id]}`} />
+                <div className={`h-0.5 rounded ${COL_BAR[col.id] ?? 'bg-sand-500'}`} />
                 {items.map((p) => (
                   <Card
                     key={p.id}
                     p={p}
+                    columns={columns}
                     code={codes.get(p.id) ?? ''}
                     selected={selectedId === p.id}
                     dragging={dragId === p.id}
@@ -235,5 +254,71 @@ export default function KanbanBoard({ projects, codes, selectedId, onSelect, onM
         </div>
       </div>
     </>
+  );
+}
+
+function ColumnEditor({
+  columns,
+  onAdd,
+  onMove,
+}: {
+  columns: KanbanColumn[];
+  onAdd: (label: string) => void;
+  onMove: (id: string, dir: -1 | 1) => void;
+}) {
+  const [nome, setNome] = useState('');
+  return (
+    <section aria-label="Editar colunas" className="flex flex-col gap-3 rounded-2xl border border-sand-200 bg-paper p-4">
+      <div className="label-mono">Colunas do quadro · ordem da esquerda para a direita</div>
+      <ol className="flex flex-col gap-1.5">
+        {columns.map((c, i) => (
+          <li key={c.id} className="flex items-center gap-2 rounded-lg border border-sand-200 px-3 py-1.5">
+            <span className="w-6 font-mono text-[10px] text-sand-600">{String(i + 1).padStart(2, '0')}</span>
+            <span className="flex-1 text-sm">{c.label}</span>
+            <button
+              onClick={() => onMove(c.id, -1)}
+              disabled={i === 0}
+              aria-label={`Mover ${c.label} para a esquerda`}
+              className="h-9 w-9 rounded-lg border border-sand-300 text-sand-800 hover:bg-sand-100 disabled:opacity-30"
+            >
+              ←
+            </button>
+            <button
+              onClick={() => onMove(c.id, 1)}
+              disabled={i === columns.length - 1}
+              aria-label={`Mover ${c.label} para a direita`}
+              className="h-9 w-9 rounded-lg border border-sand-300 text-sand-800 hover:bg-sand-100 disabled:opacity-30"
+            >
+              →
+            </button>
+          </li>
+        ))}
+      </ol>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onAdd(nome);
+          setNome('');
+        }}
+        className="flex flex-wrap gap-2"
+      >
+        <label className="sr-only" htmlFor="nova-coluna">Nome da nova coluna</label>
+        <input
+          id="nova-coluna"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          maxLength={40}
+          placeholder="Nome da nova coluna"
+          className="h-10 min-w-0 flex-1 rounded-lg border border-sand-300 bg-paper px-3 text-sm outline-none focus:border-terra-500"
+        />
+        <button
+          type="submit"
+          disabled={!nome.trim()}
+          className="h-10 rounded-lg bg-terra-600 px-4 text-sm font-semibold text-paper hover:bg-terra-700 disabled:opacity-40"
+        >
+          + Criar coluna
+        </button>
+      </form>
+    </section>
   );
 }

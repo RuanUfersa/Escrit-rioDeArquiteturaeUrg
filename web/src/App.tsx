@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useProjects } from './store/useProjects';
 import { useNotifications } from './store/useNotifications';
+import { useColumns } from './store/useColumns';
 import KanbanBoard from './components/KanbanBoard';
 import ProjectForm from './components/ProjectForm';
 import ProjectDetail from './components/ProjectDetail';
@@ -45,6 +46,7 @@ function SearchIcon() {
 export default function App() {
   const { projects, add, update, remove, reset } = useProjects();
   const notif = useNotifications();
+  const { columns, addColumn, moveColumn, resetColumns } = useColumns();
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'todas' | ProjectType>('todas');
@@ -111,7 +113,10 @@ export default function App() {
             DADOS FICTÍCIOS · SEM LOGIN
           </div>
           <button
-            onClick={() => reset()}
+            onClick={() => {
+              reset();
+              resetColumns();
+            }}
             className="self-start rounded-lg border border-sand-700 px-3 py-1.5 text-xs text-sand-200 hover:bg-sand-900"
           >
             Restaurar dados de exemplo
@@ -178,6 +183,9 @@ export default function App() {
             <KanbanBoard
               projects={filtered}
               codes={codes}
+              columns={columns}
+              onAddColumn={addColumn}
+              onMoveColumn={moveColumn}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onMove={(id, to) => update(id, { statusKanban: to })}
@@ -194,11 +202,14 @@ export default function App() {
               onResetLog={notif.reset}
             />
           ) : (
-            <DashboardView projects={filtered} onSelect={setSelectedId} />
+            <DashboardView projects={filtered} columns={columns} onSelect={setSelectedId} />
           )}
 
           <button
-            onClick={() => reset()}
+            onClick={() => {
+              reset();
+              resetColumns();
+            }}
             className="self-start text-xs text-sand-600 underline underline-offset-2 lg:hidden"
           >
             Restaurar dados de exemplo
@@ -232,6 +243,7 @@ export default function App() {
         <ProjectDetail
           project={selected}
           code={codes.get(selected.id) ?? ''}
+          estagio={columns.find((c) => c.id === selected.statusKanban)?.label ?? ''}
           onClose={() => setSelectedId(null)}
           onUpdate={update}
         />

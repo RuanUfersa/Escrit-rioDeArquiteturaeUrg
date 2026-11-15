@@ -19,46 +19,28 @@ export interface AgendaPendente {
   fase: string;
 }
 
-const SLOTS = [
-  { inicio: '09:00', fim: '12:00' },
-  { inicio: '14:00', fim: '16:00' },
-  { inicio: '16:00', fim: '18:00' },
-];
-
 export function buildAgenda(projects: Project[]): AgendaEvent[] {
-  const porDia = new Map<string, AgendaEvent[]>();
+  const out: AgendaEvent[] = [];
   for (const p of projects) {
-    const template = SCOPE_TEMPLATES[p.tipo];
     for (const s of p.escopo) {
-      const meta = template.items.find((t) => t.id === s.templateId);
-      if (!meta?.requerAgendamento || !s.scheduledAt) continue;
-      const base: AgendaEvent = {
+      // Qualquer etapa pode ser agendada; desconsideradas não entram.
+      if (!s.scheduledAt || s.status === 'desconsiderado') continue;
+      out.push({
         id: `${p.id}:${s.templateId}`,
         projectId: p.id,
         projectNome: p.nome,
         titulo: s.titulo,
         data: s.scheduledAt,
-        horaInicio: '',
+        horaInicio: s.horaAgendada ?? '',
         horaFim: '',
         conflito: false,
-      };
-      const list = porDia.get(base.data) ?? [];
-      list.push(base);
-      porDia.set(base.data, list);
+      });
     }
   }
-  const out: AgendaEvent[] = [];
-  for (const list of porDia.values()) {
-    list.sort((a, b) => a.titulo.localeCompare(b.titulo));
-    list.forEach((e, i) => {
-      const slot = SLOTS[i % SLOTS.length];
-      out.push({
-        ...e,
-        horaInicio: slot.inicio,
-        horaFim: slot.fim,
-        conflito: list.length > 1,
-      });
-    });
+  // Conflito: duas etapas no mesmo dia e no mesmo horário.
+  // (A duração de cada compromisso ainda não é registrada.)
+  for (const e of out) {
+    e.conflito = !!e.horaInicio && out.some((o) => o !== e && o.data === e.data && o.horaInicio === e.horaInicio);
   }
   return out;
 }
@@ -69,7 +51,7 @@ export function pendingAgenda(projects: Project[]): AgendaPendente[] {
     const template = SCOPE_TEMPLATES[p.tipo];
     for (const s of p.escopo) {
       const meta = template.items.find((t) => t.id === s.templateId);
-      if (meta?.requerAgendamento && !s.scheduledAt) {
+      if (meta?.requerAgendamento && !s.scheduledAt && s.status !== 'desconsiderado') {
         out.push({ projectId: p.id, projectNome: p.nome, titulo: s.titulo, fase: s.fase });
       }
     }
