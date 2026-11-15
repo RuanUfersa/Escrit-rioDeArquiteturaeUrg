@@ -41,6 +41,17 @@ export interface ProjectScopeItem {
   revisoesUsadas: number; // 0..2
   exigeDefinicaoCliente: boolean;
   scheduledAt?: string;
+  descricao?: string; // texto livre da equipe sobre a etapa
+  comentarios?: ComentarioEtapa[];
+}
+
+export const MAX_COMENTARIO = 500;
+
+export interface ComentarioEtapa {
+  id: string;
+  texto: string; // até MAX_COMENTARIO caracteres
+  data: string; // ISO data-hora
+  // autor: entra quando houver login (bloco de autenticação)
 }
 
 export interface Contrato {

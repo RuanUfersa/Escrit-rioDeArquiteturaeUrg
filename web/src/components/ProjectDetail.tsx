@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { Project, ScopeItemStatus, Financeiro, Parcela, DocumentoFiscal } from '../types';
-import { KANBAN_COLUMNS, PROJECT_TYPE_LABELS } from '../types';
+import type { Project, ProjectScopeItem, ScopeItemStatus, Financeiro, Parcela, DocumentoFiscal } from '../types';
+import { KANBAN_COLUMNS, MAX_COMENTARIO, PROJECT_TYPE_LABELS } from '../types';
 import { SCOPE_TEMPLATES } from '../data/scopeTemplates';
 import { formatBRL, MAX_UPLOAD_BYTES } from '../data/financeiro';
 import { diasAte, fmtDate, prazoTexto } from '../lib/format';
@@ -99,6 +99,18 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
     if (kind === 'nota') updateFinanceiro({ notaFiscal: undefined });
     else if (kind === 'sinal') updateFinanceiro({ sinal: { ...project.financeiro.sinal, comprovante: undefined } });
     else if (parId) updateParcela(parId, { comprovante: undefined });
+  }
+
+  function patchItem(templateId: string, patch: Partial<ProjectScopeItem>) {
+    const escopo = project.escopo.map((s) => (s.templateId === templateId ? { ...s, ...patch } : s));
+    onUpdate(project.id, { escopo });
+  }
+
+  function addComentario(item: ProjectScopeItem, texto: string) {
+    const limpo = texto.trim().slice(0, MAX_COMENTARIO);
+    if (!limpo) return;
+    const novo = { id: Math.random().toString(36).slice(2, 10), texto: limpo, data: new Date().toISOString() };
+    patchItem(item.templateId, { comentarios: [...(item.comentarios ?? []), novo] });
   }
 
   function setStatus(templateId: string, status: ScopeItemStatus) {
@@ -221,7 +233,9 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
                       <div className="min-w-0 flex-1">
                         <div className="label-mono">{s.fase}</div>
                         <div className="text-sm font-medium">{s.titulo}</div>
-                        {meta?.descricao && <div className="text-xs text-sand-700">{meta.descricao}</div>}
+                        {(s.descricao || meta?.descricao) && (
+                          <div className="line-clamp-2 text-xs text-sand-700">{s.descricao || meta?.descricao}</div>
+                        )}
                       </div>
                       <label className="shrink-0">
                         <span className="sr-only">Status de {s.titulo}</span>
@@ -263,6 +277,12 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
                         )}
                       </div>
                     )}
+                    <EtapaNotas
+                      item={s}
+                      descricaoPadrao={meta?.descricao}
+                      onDescricao={(v) => patchItem(s.templateId, { descricao: v })}
+                      onComentar={(t) => addComentario(s, t)}
+                    />
                   </div>
                 );
               })}
@@ -335,6 +355,96 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function EtapaNotas({
+  item,
+  descricaoPadrao,
+  onDescricao,
+  onComentar,
+}: {
+  item: ProjectScopeItem;
+  descricaoPadrao?: string;
+  onDescricao: (v: string) => void;
+  onComentar: (texto: string) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [novo, setNovo] = useState('');
+  const comentarios = item.comentarios ?? [];
+  const id = `etapa-${item.templateId}`;
+  const restante = MAX_COMENTARIO - novo.length;
+
+  return (
+    <div className="ml-6">
+      <button
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        aria-controls={id}
+        className="min-h-9 text-xs font-medium text-terra-700 hover:text-terra-900"
+      >
+        {aberto ? '▾' : '▸'} Descrição e comentários
+        {comentarios.length > 0 && <span className="ml-1 font-mono text-sand-700">({comentarios.length})</span>}
+      </button>
+      {aberto && (
+        <div id={id} className="mt-1 flex flex-col gap-3 rounded-xl border border-sand-200 bg-cream p-3">
+          <label className="flex flex-col gap-1">
+            <span className="label-mono">Descrição</span>
+            <textarea
+              value={item.descricao ?? ''}
+              onChange={(e) => onDescricao(e.target.value)}
+              placeholder={descricaoPadrao ?? 'Descreva o que deve ser feito nesta etapa'}
+              rows={2}
+              className="resize-y rounded-lg border border-sand-300 bg-paper px-3 py-2 text-sm text-sand-950 outline-none focus:border-terra-500"
+            />
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="label-mono">Comentários</span>
+            {comentarios.length === 0 && <div className="text-xs text-sand-600">Nenhum comentário ainda.</div>}
+            {comentarios.map((c) => (
+              <div key={c.id} className="rounded-lg border border-sand-200 bg-paper px-3 py-2">
+                <p className="whitespace-pre-wrap break-words text-sm">{c.texto}</p>
+                <div className="mt-1 font-mono text-[10px] tracking-[0.1em] text-sand-600">
+                  {fmtDate(c.data)} · {new Date(c.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            ))}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onComentar(novo);
+                setNovo('');
+              }}
+              className="flex flex-col gap-1.5"
+            >
+              <label className="sr-only" htmlFor={`${id}-novo`}>Novo comentário</label>
+              <textarea
+                id={`${id}-novo`}
+                value={novo}
+                maxLength={MAX_COMENTARIO}
+                onChange={(e) => setNovo(e.target.value.slice(0, MAX_COMENTARIO))}
+                placeholder="Escreva um comentário para a equipe"
+                rows={2}
+                className="resize-y rounded-lg border border-sand-300 bg-paper px-3 py-2 text-sm text-sand-950 outline-none focus:border-terra-500"
+              />
+              <div className="flex items-center gap-2">
+                <span className={`font-mono text-[10px] tracking-[0.1em] ${restante <= 50 ? 'text-terra-700' : 'text-sand-600'}`} aria-live="polite">
+                  {novo.length} / {MAX_COMENTARIO}
+                </span>
+                <button
+                  type="submit"
+                  disabled={!novo.trim()}
+                  className="ml-auto h-9 rounded-lg bg-terra-600 px-3 text-xs font-semibold text-paper hover:bg-terra-700 disabled:opacity-40"
+                >
+                  Comentar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
