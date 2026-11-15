@@ -9,16 +9,16 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const SEED_DATES: Record<ProjectType, Record<string, string>> = {
-  construcao_nova: { levantamento_terreno: '2026-09-16', reuniao_expectativas: '2026-09-18' },
-  reforma: { visita_tecnica_previa: '2026-09-15', levantamento_imovel: '2026-09-17' },
-  interiores: { levantamento_ambiente: '2026-09-15' },
+const SEED_DATES: Record<ProjectType, Record<string, [string, string]>> = {
+  construcao_nova: { levantamento_terreno: ['2026-09-16', '09:00'], reuniao_expectativas: ['2026-09-18', '14:00'] },
+  reforma: { visita_tecnica_previa: ['2026-09-15', '09:00'], levantamento_imovel: ['2026-09-17', '10:30'] },
+  interiores: { levantamento_ambiente: ['2026-09-15', '15:00'] },
 };
 
 function seedScope(type: ProjectType) {
   return buildInitialScope(type).map((s) => {
     const d = SEED_DATES[type][s.templateId];
-    return d ? { ...s, scheduledAt: d, status: 'agendado' as const } : s;
+    return d ? { ...s, scheduledAt: d[0], horaAgendada: d[1], status: 'agendado' as const } : s;
   });
 }
 

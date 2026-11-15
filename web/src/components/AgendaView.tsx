@@ -31,7 +31,7 @@ export default function AgendaView({ projects, onSelect }: Props) {
   return (
     <div>
       <div className="mb-4 rounded-xl border border-dashed border-sand-300 p-3 text-xs text-sand-700">
-        <b>Agenda interna</b> — protótipo de navegação simulando eventos do Google Agenda ocupados.
+        <b>Agenda interna</b> — protótipo de navegação com as etapas agendadas no checklist (ainda sem Google Agenda).
         Clique em um evento para abrir o projeto. Conflito entre projetos aparece em <span className="font-medium text-terra-700">destaque</span>.
       </div>
 
@@ -55,9 +55,9 @@ export default function AgendaView({ projects, onSelect }: Props) {
                     key={e.id}
                     onClick={() => onSelect(e.projectId)}
                     className={`block rounded-lg p-2 text-left text-xs ${e.conflito ? 'bg-terra-100 text-terra-900 ring-1 ring-terra-400' : 'bg-sand-950 text-cream'}`}
-                    title={e.conflito ? 'Conflito: mais de um projeto no período' : 'Abrir projeto'}
+                    title={e.conflito ? 'Conflito: outra etapa no mesmo dia e horário' : 'Abrir projeto'}
                   >
-                    <div className="font-medium">{e.horaInicio}–{e.horaFim}</div>
+                    <div className="font-medium">{e.horaInicio || 'sem horário'}</div>
                     <div>{e.titulo}</div>
                     <div className="opacity-70">{e.projectNome}{e.conflito ? ' ⚠' : ''}</div>
                   </button>

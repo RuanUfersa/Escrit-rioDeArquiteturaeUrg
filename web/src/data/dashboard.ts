@@ -1,5 +1,7 @@
 import type { Project } from '../types';
+import type { KanbanColumn } from '../types';
 import { KANBAN_COLUMNS, PROJECT_TYPE_LABELS } from '../types';
+import { scopePct } from '../lib/format';
 
 export interface StatusLinha {
   status: string;
@@ -36,15 +38,10 @@ export interface DashboardData {
   proximasAtividades: number;
 }
 
-function scopePct(p: Project): number {
-  if (p.escopo.length === 0) return 0;
-  return Math.round((p.escopo.filter((s) => s.status === 'concluido').length / p.escopo.length) * 100);
-}
-
-export function buildDashboard(projects: Project[]): DashboardData {
+export function buildDashboard(projects: Project[], columns: KanbanColumn[] = KANBAN_COLUMNS): DashboardData {
   const totalProjetos = projects.length;
 
-  const porStatus: StatusLinha[] = KANBAN_COLUMNS.map((c) => {
+  const porStatus: StatusLinha[] = columns.map((c) => {
     const count = projects.filter((p) => p.statusKanban === c.id).length;
     return { status: c.id, label: c.label, count, pct: totalProjetos ? Math.round((count / totalProjetos) * 100) : 0 };
   });
@@ -106,7 +103,7 @@ export function buildDashboard(projects: Project[]): DashboardData {
 
   const proximasAtividades = projects.reduce(
     (acc, p) =>
-      acc + p.escopo.filter((s) => s.scheduledAt && s.status !== 'concluido').length,
+      acc + p.escopo.filter((s) => s.scheduledAt && s.status !== 'concluido' && s.status !== 'desconsiderado').length,
     0,
   );
 

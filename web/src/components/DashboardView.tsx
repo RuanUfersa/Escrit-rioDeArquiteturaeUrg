@@ -1,15 +1,16 @@
-import type { Project } from '../types';
+import type { KanbanColumn, Project } from '../types';
 import { buildDashboard, type ProximoVencimento } from '../data/dashboard';
 import { formatBRL } from '../data/financeiro';
 import { fmtDate, prazoTexto } from '../lib/format';
 
 interface Props {
   projects: Project[];
+  columns: KanbanColumn[];
   onSelect: (id: string) => void;
 }
 
-export default function DashboardView({ projects, onSelect }: Props) {
-  const d = buildDashboard(projects);
+export default function DashboardView({ projects, columns, onSelect }: Props) {
+  const d = buildDashboard(projects, columns);
 
   return (
     <div>

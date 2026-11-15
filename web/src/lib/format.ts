@@ -34,12 +34,23 @@ export function projectCodes(projects: Project[]): Map<string, string> {
   return new Map(sorted.map((p, i) => [p.id, `PRJ-${String(i + 1).padStart(4, '0')}`]));
 }
 
-export function scopePct(p: Project): number {
-  if (p.escopo.length === 0) return 0;
-  return Math.round((p.escopo.filter((s) => s.status === 'concluido').length / p.escopo.length) * 100);
+/** Etapas que contam no progresso (as desconsideradas ficam de fora). */
+export function etapasAtivas(p: Project) {
+  return p.escopo.filter((s) => s.status !== 'desconsiderado');
 }
 
-/** Próximo item do checklist ainda não concluído. */
-export function proximoItem(p: Project) {
-  return p.escopo.find((s) => s.status !== 'concluido');
+export function scopePct(p: Project): number {
+  const ativas = etapasAtivas(p);
+  if (ativas.length === 0) return 0;
+  return Math.round((ativas.filter((s) => s.status === 'concluido').length / ativas.length) * 100);
 }
+
+/** Próxima etapa ainda não concluída (ignora as desconsideradas). */
+export function proximoItem(p: Project) {
+  return p.escopo.find((s) => s.status !== 'concluido' && s.status !== 'desconsiderado');
+}
+
+/** Horários de 30 em 30 minutos: 00:00, 00:30 … 23:30. */
+export const HORARIOS: string[] = Array.from({ length: 48 }, (_, i) =>
+  `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`,
+);

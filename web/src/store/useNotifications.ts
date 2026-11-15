@@ -14,6 +14,9 @@ export interface NotificacaoLog {
   vencimento: string;
   destino: string;
   dataEnvio: string;
+  /** Texto usado no envio (editável na janela de envio). */
+  assunto?: string;
+  mensagem?: string;
 }
 
 function uid() {
@@ -35,38 +38,28 @@ export function useNotifications() {
     localStorage.setItem(KEY, JSON.stringify(logs));
   }, [logs]);
 
-  const send = (l: Lembrete, canais: { email: boolean; whatsapp: boolean }): void => {
-    const agora = new Date().toISOString();
-    const novos: NotificacaoLog[] = [];
-    if (canais.email && l.clienteEmail) {
-      novos.push({
-        id: uid(),
-        key: l.key,
-        projectNome: l.projectNome,
-        clienteNome: l.clienteNome,
-        canal: 'email',
-        descricao: l.descricao,
-        valor: l.valor,
-        vencimento: l.vencimento,
-        destino: l.clienteEmail,
-        dataEnvio: agora,
-      });
-    }
-    if (canais.whatsapp && l.clienteWhats) {
-      novos.push({
-        id: uid(),
-        key: l.key,
-        projectNome: l.projectNome,
-        clienteNome: l.clienteNome,
-        canal: 'whatsapp',
-        descricao: l.descricao,
-        valor: l.valor,
-        vencimento: l.vencimento,
-        destino: l.clienteWhats,
-        dataEnvio: agora,
-      });
-    }
-    setLogs((prev) => [...novos, ...prev]);
+  /**
+   * Registra um envio. E-mail: envio simulado (sem servidor ainda).
+   * WhatsApp: registra que a mensagem foi aberta no WhatsApp; quem envia de fato é o usuário.
+   */
+  const send = (l: Lembrete, canal: 'email' | 'whatsapp', conteudo: { assunto?: string; mensagem: string }): void => {
+    const destino = canal === 'email' ? l.clienteEmail : l.clienteWhats;
+    if (!destino) return;
+    const novo: NotificacaoLog = {
+      id: uid(),
+      key: l.key,
+      projectNome: l.projectNome,
+      clienteNome: l.clienteNome,
+      canal,
+      descricao: l.descricao,
+      valor: l.valor,
+      vencimento: l.vencimento,
+      destino,
+      dataEnvio: new Date().toISOString(),
+      assunto: conteudo.assunto,
+      mensagem: conteudo.mensagem,
+    };
+    setLogs((prev) => [novo, ...prev]);
   };
 
   const sentKeys = new Set(logs.map((l) => l.key));

@@ -1,19 +1,20 @@
 export type ProjectType = 'construcao_nova' | 'reforma' | 'interiores';
 
-export type KanbanStatus =
-  | 'novo'
-  | 'em_levantamento'
-  | 'em_projeto'
-  | 'em_apresentacao'
-  | 'detalhamento_entrega'
-  | 'concluido';
+// Colunas do quadro são configuráveis (criar e reordenar); o id é livre.
+export type KanbanStatus = string;
+
+export interface KanbanColumn {
+  id: KanbanStatus;
+  label: string;
+}
 
 export type ScopeItemStatus =
   | 'pendente'
   | 'agendado'
   | 'em_andamento'
   | 'em_revisao'
-  | 'concluido';
+  | 'concluido'
+  | 'desconsiderado'; // etapa ignorada: não conta no progresso
 
 export interface ScopeItemTemplate {
   id: string;
@@ -40,7 +41,19 @@ export interface ProjectScopeItem {
   status: ScopeItemStatus;
   revisoesUsadas: number; // 0..2
   exigeDefinicaoCliente: boolean;
-  scheduledAt?: string;
+  scheduledAt?: string; // data aaaa-mm-dd
+  horaAgendada?: string; // hh:mm, de 30 em 30 minutos
+  descricao?: string; // texto livre da equipe sobre a etapa
+  comentarios?: ComentarioEtapa[];
+}
+
+export const MAX_COMENTARIO = 500;
+
+export interface ComentarioEtapa {
+  id: string;
+  texto: string; // até MAX_COMENTARIO caracteres
+  data: string; // ISO data-hora
+  // autor: entra quando houver login (bloco de autenticação)
 }
 
 export interface Contrato {
@@ -99,10 +112,10 @@ export interface Project {
   createdAt: string;
 }
 
-export const KANBAN_COLUMNS: { id: KanbanStatus; label: string }[] = [
+export const KANBAN_COLUMNS: KanbanColumn[] = [
   { id: 'novo', label: 'Novo' },
   { id: 'em_levantamento', label: 'Levantamento' },
-  { id: 'em_projeto', label: 'Projeto' },
+  { id: 'em_projeto', label: 'Estudo Preliminar' },
   { id: 'em_apresentacao', label: 'Apresentação' },
   { id: 'detalhamento_entrega', label: 'Detalhamento / Entrega' },
   { id: 'concluido', label: 'Concluído' },

@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import type { Project, ScopeItemStatus, Financeiro, Parcela, DocumentoFiscal } from '../types';
-import { KANBAN_COLUMNS, PROJECT_TYPE_LABELS } from '../types';
+import type { Project, ProjectScopeItem, ScopeItemStatus, Financeiro, Parcela, DocumentoFiscal } from '../types';
+import { MAX_COMENTARIO, PROJECT_TYPE_LABELS } from '../types';
 import { SCOPE_TEMPLATES } from '../data/scopeTemplates';
 import { formatBRL, MAX_UPLOAD_BYTES } from '../data/financeiro';
-import { diasAte, fmtDate, prazoTexto } from '../lib/format';
+import { diasAte, etapasAtivas, fmtDate, HORARIOS, prazoTexto } from '../lib/format';
 
 interface Props {
   project: Project;
   code: string;
+  estagio: string;
   onClose: () => void;
   onUpdate: (id: string, patch: Partial<Project>) => void;
 }
@@ -20,11 +21,13 @@ const STATUS_LABEL: Record<ScopeItemStatus, string> = {
   em_andamento: 'Em andamento',
   em_revisao: 'Em revisão',
   concluido: 'Concluído',
+  desconsiderado: 'Desconsiderar etapa',
 };
 
 // Bolinha de status, como na proposta visual.
 function Dot({ status }: { status: ScopeItemStatus }) {
   if (status === 'concluido') return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-oliva-600" aria-hidden="true" />;
+  if (status === 'desconsiderado') return <span className="h-2.5 w-2.5 shrink-0 rounded-full border-[1.5px] border-dashed border-sand-400" aria-hidden="true" />;
   if (status === 'pendente') return <span className="h-2.5 w-2.5 shrink-0 rounded-full border-[1.5px] border-sand-400" aria-hidden="true" />;
   return <span className="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-terra-500" aria-hidden="true" />;
 }
@@ -35,9 +38,10 @@ const STATUS_STYLE: Record<ScopeItemStatus, string> = {
   em_andamento: 'bg-terra-100 text-terra-800',
   em_revisao: 'bg-terra-100 text-terra-800',
   concluido: 'bg-oliva-100 text-oliva-800',
+  desconsiderado: 'bg-sand-50 text-sand-600 line-through',
 };
 
-export default function ProjectDetail({ project, code, onClose, onUpdate }: Props) {
+export default function ProjectDetail({ project, code, estagio, onClose, onUpdate }: Props) {
   const template = SCOPE_TEMPLATES[project.tipo];
   const [docMsg, setDocMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('checklist');
@@ -101,7 +105,22 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
     else if (parId) updateParcela(parId, { comprovante: undefined });
   }
 
+  function patchItem(templateId: string, patch: Partial<ProjectScopeItem>) {
+    const escopo = project.escopo.map((s) => (s.templateId === templateId ? { ...s, ...patch } : s));
+    onUpdate(project.id, { escopo });
+  }
+
+  function addComentario(item: ProjectScopeItem, texto: string) {
+    const limpo = texto.trim().slice(0, MAX_COMENTARIO);
+    if (!limpo) return;
+    const novo = { id: Math.random().toString(36).slice(2, 10), texto: limpo, data: new Date().toISOString() };
+    patchItem(item.templateId, { comentarios: [...(item.comentarios ?? []), novo] });
+  }
+
   function setStatus(templateId: string, status: ScopeItemStatus) {
+    const item = project.escopo.find((s) => s.templateId === templateId);
+    // "Agendado" exige data e hora definidas.
+    if (status === 'agendado' && !(item?.scheduledAt && item?.horaAgendada)) return;
     const escopo = project.escopo.map((s) => (s.templateId === templateId ? { ...s, status } : s));
     onUpdate(project.id, { escopo });
   }
@@ -118,14 +137,45 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
     onUpdate(project.id, { escopo });
   }
 
-  function schedule(templateId: string, date: string) {
-    const escopo = project.escopo.map((s) =>
-      s.templateId === templateId ? { ...s, scheduledAt: date, status: 'agendado' as const } : s,
-    );
+  /** Agenda data e hora. "Agendado" só vale com as duas definidas. */
+  function schedule(item: ProjectScopeItem, patch: { scheduledAt?: string; horaAgendada?: string }) {
+    const next = { ...item, ...patch };
+    const completo = !!next.scheduledAt && !!next.horaAgendada;
+    let status = next.status;
+    if (completo && status === 'pendente') status = 'agendado';
+    if (!completo && status === 'agendado') status = 'pendente';
+    patchItem(item.templateId, { ...patch, status });
+  }
+
+  function addEtapa(titulo: string, fase: string) {
+    const nova: ProjectScopeItem = {
+      templateId: `custom_${Math.random().toString(36).slice(2, 10)}`,
+      titulo: titulo.trim(),
+      fase: fase.trim() || 'Etapa',
+      status: 'pendente',
+      revisoesUsadas: 0,
+      exigeDefinicaoCliente: false,
+    };
+    onUpdate(project.id, { escopo: [...project.escopo, nova] });
+  }
+
+  function moveEtapa(templateId: string, dir: -1 | 1) {
+    const i = project.escopo.findIndex((s) => s.templateId === templateId);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= project.escopo.length) return;
+    const escopo = [...project.escopo];
+    [escopo[i], escopo[j]] = [escopo[j], escopo[i]];
     onUpdate(project.id, { escopo });
   }
 
-  const concluidos = project.escopo.filter((s) => s.status === 'concluido').length;
+  function removeEtapa(item: ProjectScopeItem) {
+    // Na versão com login, a remoção vai pedir aprovação do Gerente.
+    if (!confirm(`Remover a etapa "${item.titulo}"?`)) return;
+    onUpdate(project.id, { escopo: project.escopo.filter((s) => s.templateId !== item.templateId) });
+  }
+
+  const ativas = etapasAtivas(project);
+  const concluidos = ativas.filter((s) => s.status === 'concluido').length;
   const fin = project.financeiro;
   const totalPago =
     (fin.sinal.status === 'pago' ? fin.sinal.valor : 0) +
@@ -144,7 +194,6 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
     d.setDate(d.getDate() + project.contrato.prazoDias);
     return d.toISOString().slice(0, 10);
   })();
-  const estagio = KANBAN_COLUMNS.find((c) => c.id === project.statusKanban)?.label ?? '';
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'checklist', label: 'Checklist' },
@@ -186,7 +235,7 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
               </div>
               <div>
                 <dt className="label-mono">Escopo</dt>
-                <dd className="font-display text-lg font-semibold">{concluidos} / {project.escopo.length}</dd>
+                <dd className="font-display text-lg font-semibold">{concluidos} / {ativas.length}</dd>
               </div>
               <div>
                 <dt className="label-mono">Prazo</dt>
@@ -211,45 +260,84 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
 
           {tab === 'checklist' && (
             <section aria-label="Checklist de escopo" className="overflow-hidden rounded-2xl border border-sand-200 bg-paper">
-              <div className="border-b border-sand-100 px-[18px] py-3 label-mono">Checklist — {template.label}</div>
-              {project.escopo.map((s) => {
+              <div className="flex flex-wrap items-center gap-2 border-b border-sand-100 px-[18px] py-3">
+                <span className="label-mono">Checklist — {template.label}</span>
+                {project.escopo.length !== ativas.length && (
+                  <span className="ml-auto font-mono text-[10px] tracking-[0.1em] text-sand-600">
+                    {project.escopo.length - ativas.length} DESCONSIDERADA(S), FORA DA CONTAGEM
+                  </span>
+                )}
+              </div>
+              {project.escopo.map((s, i) => {
                 const meta = template.items.find((t) => t.id === s.templateId);
+                const ignorada = s.status === 'desconsiderado';
+                const podeAgendar = !!s.scheduledAt && !!s.horaAgendada;
                 return (
-                  <div key={s.templateId} className="flex flex-col gap-2 border-b border-sand-100 px-[18px] py-3.5 last:border-0">
+                  <div key={s.templateId} className={`flex flex-col gap-2 border-b border-sand-100 px-[18px] py-3.5 last:border-0 ${ignorada ? 'bg-sand-50/60' : ''}`}>
                     <div className="flex items-center gap-3.5">
                       <Dot status={s.status} />
-                      <div className="min-w-0 flex-1">
+                      <div className={`min-w-0 flex-1 ${ignorada ? 'opacity-60' : ''}`}>
                         <div className="label-mono">{s.fase}</div>
-                        <div className="text-sm font-medium">{s.titulo}</div>
-                        {meta?.descricao && <div className="text-xs text-sand-700">{meta.descricao}</div>}
+                        <div className={`text-sm font-medium ${ignorada ? 'line-through' : ''}`}>{s.titulo}</div>
+                        {(s.descricao || meta?.descricao) && (
+                          <div className="line-clamp-2 text-xs text-sand-700">{s.descricao || meta?.descricao}</div>
+                        )}
                       </div>
                       <label className="shrink-0">
                         <span className="sr-only">Status de {s.titulo}</span>
                         <select
                           value={s.status}
                           onChange={(e) => setStatus(s.templateId, e.target.value as ScopeItemStatus)}
-                          className={`h-9 rounded-md border-0 px-2 font-mono text-[10px] tracking-[0.1em] uppercase ${STATUS_STYLE[s.status]}`}
+                          className={`h-9 max-w-[150px] rounded-md border-0 px-2 font-mono text-[10px] tracking-[0.1em] uppercase ${STATUS_STYLE[s.status]}`}
                         >
                           {(Object.keys(STATUS_LABEL) as ScopeItemStatus[]).map((k) => (
-                            <option key={k} value={k}>{STATUS_LABEL[k]}</option>
+                            <option key={k} value={k} disabled={k === 'agendado' && !podeAgendar && s.status !== 'agendado'}>
+                              {STATUS_LABEL[k]}
+                              {k === 'agendado' && !podeAgendar ? ' (defina data e hora)' : ''}
+                            </option>
                           ))}
                         </select>
                       </label>
                     </div>
-                    {(meta?.requerAgendamento || meta?.permiteRevisao || s.exigeDefinicaoCliente) && (
+
+                    <div className="ml-6 flex flex-wrap items-center gap-2 text-xs text-sand-700">
+                      <span className="label-mono">Agendamento</span>
+                      <label className="flex items-center gap-1.5">
+                        <span className="sr-only">Data de {s.titulo}</span>
+                        <input
+                          type="date"
+                          value={s.scheduledAt ?? ''}
+                          onChange={(e) => schedule(s, { scheduledAt: e.target.value || undefined })}
+                          className="h-9 rounded-md border border-sand-300 bg-paper px-1.5"
+                        />
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <span className="sr-only">Hora de {s.titulo}</span>
+                        <select
+                          value={s.horaAgendada ?? ''}
+                          onChange={(e) => schedule(s, { horaAgendada: e.target.value || undefined })}
+                          className="h-9 rounded-md border border-sand-300 bg-paper px-1.5"
+                        >
+                          <option value="">Hora</option>
+                          {HORARIOS.map((h) => (
+                            <option key={h} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {(s.scheduledAt || s.horaAgendada) && (
+                        <button
+                          onClick={() => schedule(s, { scheduledAt: undefined, horaAgendada: undefined })}
+                          className="h-9 px-1 text-terra-700 underline-offset-2 hover:underline"
+                        >
+                          limpar
+                        </button>
+                      )}
+                      {s.scheduledAt && !s.horaAgendada && <span className="text-terra-700">falta a hora</span>}
+                      {!s.scheduledAt && s.horaAgendada && <span className="text-terra-700">falta a data</span>}
+                    </div>
+
+                    {(meta?.permiteRevisao || s.exigeDefinicaoCliente) && (
                       <div className="ml-6 flex flex-wrap items-center gap-2 text-xs text-sand-700">
-                        {meta?.requerAgendamento && (
-                          <label className="flex items-center gap-1.5">
-                            Data
-                            <input
-                              type="date"
-                              value={s.scheduledAt ?? ''}
-                              onChange={(e) => schedule(s.templateId, e.target.value)}
-                              className="h-8 rounded-md border border-sand-300 bg-paper px-1.5"
-                            />
-                            <span className="text-[11px] text-sand-500">agenda interna, o cliente não vê</span>
-                          </label>
-                        )}
                         {meta?.permiteRevisao && (
                           <span className="flex items-center gap-1.5">
                             Revisões <b className="font-mono">{s.revisoesUsadas} de 2</b>
@@ -263,9 +351,44 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
                         )}
                       </div>
                     )}
+
+                    <div className="ml-6 flex flex-wrap items-center gap-1.5">
+                      <EtapaNotas
+                        item={s}
+                        descricaoPadrao={meta?.descricao}
+                        onDescricao={(v) => patchItem(s.templateId, { descricao: v })}
+                        onComentar={(t) => addComentario(s, t)}
+                      />
+                      <div className="ml-auto flex items-center gap-1.5">
+                        <button
+                          onClick={() => moveEtapa(s.templateId, -1)}
+                          disabled={i === 0}
+                          aria-label={`Subir etapa ${s.titulo}`}
+                          className="h-9 w-9 rounded-lg border border-sand-300 text-sand-800 hover:bg-sand-100 disabled:opacity-30"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          onClick={() => moveEtapa(s.templateId, 1)}
+                          disabled={i === project.escopo.length - 1}
+                          aria-label={`Descer etapa ${s.titulo}`}
+                          className="h-9 w-9 rounded-lg border border-sand-300 text-sand-800 hover:bg-sand-100 disabled:opacity-30"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          onClick={() => removeEtapa(s)}
+                          aria-label={`Remover etapa ${s.titulo}`}
+                          className="h-9 rounded-lg px-2 text-xs text-terra-700 hover:bg-terra-50"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
+              <NovaEtapa fases={[...new Set(project.escopo.map((s) => s.fase))]} onAdd={addEtapa} />
             </section>
           )}
 
@@ -336,6 +459,146 @@ export default function ProjectDetail({ project, code, onClose, onUpdate }: Prop
         </div>
       </div>
     </div>
+  );
+}
+
+function EtapaNotas({
+  item,
+  descricaoPadrao,
+  onDescricao,
+  onComentar,
+}: {
+  item: ProjectScopeItem;
+  descricaoPadrao?: string;
+  onDescricao: (v: string) => void;
+  onComentar: (texto: string) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [novo, setNovo] = useState('');
+  const comentarios = item.comentarios ?? [];
+  const id = `etapa-${item.templateId}`;
+  const restante = MAX_COMENTARIO - novo.length;
+
+  return (
+    <div className={aberto ? 'w-full' : ''}>
+      <button
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        aria-controls={id}
+        className="min-h-9 text-xs font-medium text-terra-700 hover:text-terra-900"
+      >
+        {aberto ? '▾' : '▸'} Descrição e comentários
+        {comentarios.length > 0 && <span className="ml-1 font-mono text-sand-700">({comentarios.length})</span>}
+      </button>
+      {aberto && (
+        <div id={id} className="mt-1 flex flex-col gap-3 rounded-xl border border-sand-200 bg-cream p-3">
+          <label className="flex flex-col gap-1">
+            <span className="label-mono">Descrição</span>
+            <textarea
+              value={item.descricao ?? ''}
+              onChange={(e) => onDescricao(e.target.value)}
+              placeholder={descricaoPadrao ?? 'Descreva o que deve ser feito nesta etapa'}
+              rows={2}
+              className="resize-y rounded-lg border border-sand-300 bg-paper px-3 py-2 text-sm text-sand-950 outline-none focus:border-terra-500"
+            />
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="label-mono">Comentários</span>
+            {comentarios.length === 0 && <div className="text-xs text-sand-600">Nenhum comentário ainda.</div>}
+            {comentarios.map((c) => (
+              <div key={c.id} className="rounded-lg border border-sand-200 bg-paper px-3 py-2">
+                <p className="whitespace-pre-wrap break-words text-sm">{c.texto}</p>
+                <div className="mt-1 font-mono text-[10px] tracking-[0.1em] text-sand-600">
+                  {fmtDate(c.data)} · {new Date(c.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            ))}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onComentar(novo);
+                setNovo('');
+              }}
+              className="flex flex-col gap-1.5"
+            >
+              <label className="sr-only" htmlFor={`${id}-novo`}>Novo comentário</label>
+              <textarea
+                id={`${id}-novo`}
+                value={novo}
+                maxLength={MAX_COMENTARIO}
+                onChange={(e) => setNovo(e.target.value.slice(0, MAX_COMENTARIO))}
+                placeholder="Escreva um comentário para a equipe"
+                rows={2}
+                className="resize-y rounded-lg border border-sand-300 bg-paper px-3 py-2 text-sm text-sand-950 outline-none focus:border-terra-500"
+              />
+              <div className="flex items-center gap-2">
+                <span className={`font-mono text-[10px] tracking-[0.1em] ${restante <= 50 ? 'text-terra-700' : 'text-sand-600'}`} aria-live="polite">
+                  {novo.length} / {MAX_COMENTARIO}
+                </span>
+                <button
+                  type="submit"
+                  disabled={!novo.trim()}
+                  className="ml-auto h-9 rounded-lg bg-terra-600 px-3 text-xs font-semibold text-paper hover:bg-terra-700 disabled:opacity-40"
+                >
+                  Comentar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NovaEtapa({ fases, onAdd }: { fases: string[]; onAdd: (titulo: string, fase: string) => void }) {
+  const [titulo, setTitulo] = useState('');
+  const [fase, setFase] = useState('');
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!titulo.trim()) return;
+        onAdd(titulo, fase);
+        setTitulo('');
+      }}
+      className="flex flex-wrap items-end gap-2 border-t border-sand-200 bg-cream px-[18px] py-3.5"
+    >
+      <label className="flex min-w-[180px] flex-[2] flex-col gap-1">
+        <span className="label-mono">Nova etapa</span>
+        <input
+          value={titulo}
+          onChange={(e) => setTitulo(e.target.value)}
+          maxLength={80}
+          placeholder="Ex.: Visita à obra"
+          className="h-10 rounded-lg border border-sand-300 bg-paper px-3 text-sm outline-none focus:border-terra-500"
+        />
+      </label>
+      <label className="flex min-w-[140px] flex-1 flex-col gap-1">
+        <span className="label-mono">Fase</span>
+        <input
+          value={fase}
+          onChange={(e) => setFase(e.target.value)}
+          list="fases-etapa"
+          maxLength={40}
+          placeholder="Ex.: Projeto"
+          className="h-10 rounded-lg border border-sand-300 bg-paper px-3 text-sm outline-none focus:border-terra-500"
+        />
+        <datalist id="fases-etapa">
+          {fases.map((f) => (
+            <option key={f} value={f} />
+          ))}
+        </datalist>
+      </label>
+      <button
+        type="submit"
+        disabled={!titulo.trim()}
+        className="h-10 rounded-lg bg-terra-600 px-4 text-sm font-semibold text-paper hover:bg-terra-700 disabled:opacity-40"
+      >
+        + Criar etapa
+      </button>
+    </form>
   );
 }
 
