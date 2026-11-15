@@ -201,7 +201,7 @@ export default function App() {
               projects={filtered}
               logs={notif.logs}
               sentKeys={notif.sentKeys}
-              onSend={(l, canais) => notif.send(l, canais)}
+              onSend={notif.send}
               onResetLog={notif.reset}
             />
           ) : (

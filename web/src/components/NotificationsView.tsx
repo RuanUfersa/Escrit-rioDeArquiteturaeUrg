@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { Project } from '../types';
+import EnviarLembrete from './EnviarLembrete';
 import { buildLembretes, type Lembrete } from '../data/notificacoes';
 import { formatBRL } from '../data/financeiro';
 import { fmtDate, prazoTexto } from '../lib/format';
@@ -8,7 +10,7 @@ interface Props {
   projects: Project[];
   logs: NotificacaoLog[];
   sentKeys: Set<string>;
-  onSend: (l: Lembrete, canais: { email: boolean; whatsapp: boolean }) => void;
+  onSend: (l: Lembrete, canal: 'email' | 'whatsapp', conteudo: { assunto?: string; mensagem: string }) => void;
   onResetLog: () => void;
 }
 
@@ -19,12 +21,13 @@ function fmtData(iso: string) {
 export default function NotificationsView({ projects, logs, sentKeys, onSend, onResetLog }: Props) {
   const lembretes = buildLembretes(projects);
   const pendentes = lembretes.filter((l) => !sentKeys.has(l.key));
+  const [aberto, setAberto] = useState<Lembrete | null>(null);
 
   return (
     <div>
       <div className="mb-4 rounded-xl border border-dashed border-sand-300 p-3 text-xs text-sand-700">
-        <b>Lembretes de parcela</b> — simulação (mock) do envio automático por email e WhatsApp antes do vencimento.
-        Mostra o sinal e as parcelas que vencem em até 3 dias ou estão atrasados.
+        <b>Lembretes de parcela</b> — mostra o sinal e as parcelas que vencem em até 3 dias ou estão atrasados.
+        Em “Enviar lembrete” você revisa e edita o e-mail (envio simulado nesta demonstração) e a mensagem do WhatsApp, que abre pronta para você enviar.
       </div>
 
       <h3 className="mb-2 label-mono">Pendentes de envio ({pendentes.length})</h3>
@@ -62,7 +65,7 @@ export default function NotificationsView({ projects, logs, sentKeys, onSend, on
                 </span>
                 <button
                   disabled={!temEmail && !temWhats}
-                  onClick={() => onSend(l, { email: temEmail, whatsapp: temWhats })}
+                  onClick={() => setAberto(l)}
                   className={`ml-auto h-9 rounded-lg px-3 font-medium ${!temEmail && !temWhats ? 'cursor-not-allowed bg-sand-100 text-sand-600' : 'bg-terra-600 text-white hover:bg-terra-700'}`}
                 >
                   Enviar lembrete
@@ -87,14 +90,22 @@ export default function NotificationsView({ projects, logs, sentKeys, onSend, on
           <div key={n.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sand-50 px-3 py-2 text-sm text-sand-900">
             <div>
               <span className={`mr-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${n.canal === 'email' ? 'bg-terra-100 text-terra-800' : 'bg-oliva-100 text-oliva-700'}`}>
-                {n.canal === 'email' ? '✉ email' : 'WhatsApp'}
+                {n.canal === 'email' ? '✉ email' : 'WhatsApp (aberto)'}
               </span>
               <b>{n.projectNome}</b> — {n.descricao} ({formatBRL(n.valor)})
               <div className="text-xs text-sand-700">{n.clienteNome} → {n.destino} • {fmtData(n.dataEnvio)}</div>
+              {n.mensagem && (
+                <details className="mt-1 text-xs text-sand-700">
+                  <summary className="cursor-pointer">ver mensagem</summary>
+                  {n.assunto && <div className="mt-1 font-medium">Assunto: {n.assunto}</div>}
+                  <div className="mt-1 whitespace-pre-wrap">{n.mensagem}</div>
+                </details>
+              )}
             </div>
           </div>
         ))}
       </div>
+      {aberto && <EnviarLembrete lembrete={aberto} onClose={() => setAberto(null)} onSend={onSend} />}
     </div>
   );
 }
