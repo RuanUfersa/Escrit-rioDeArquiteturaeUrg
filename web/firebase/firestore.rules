@@ -1,0 +1,50 @@
+rules_version = '2';
+
+// Regras de acesso do Firestore (colar em: console do Firebase > Firestore Database > Regras).
+// Princípio: tudo fechado; só abre o que for necessário.
+// Referências oficiais:
+//   https://firebase.google.com/docs/firestore/security/get-started
+//   https://firebase.google.com/docs/rules/rules-and-auth
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Login com Google, e-mail verificado e segunda etapa concluída.
+    // ATENÇÃO: o campo "sign_in_second_factor" aparece em uma discussão do grupo firebase-talk
+    // (https://groups.google.com/g/firebase-talk/c/7EZfxETa_jk/m/4e0FRCpWAgAJ), não na página
+    // oficial de regras. Por isso aqui só se exige que ele exista; o valor exato para o app
+    // autenticador deve ser conferido em teste real antes de liberar dados.
+    function loginCompleto() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.get('sign_in_second_factor', null) != null;
+    }
+
+    function emailDoLogin() {
+      return request.auth.token.email.lower();
+    }
+
+    // Membro ativo da lista da equipe (documento /equipe/{e-mail}).
+    function membroAtivo() {
+      return loginCompleto()
+        && exists(/databases/$(database)/documents/equipe/$(emailDoLogin()))
+        && get(/databases/$(database)/documents/equipe/$(emailDoLogin())).data.ativo == true;
+    }
+
+    // Lista da equipe: cada pessoa lê só o próprio cadastro.
+    // A leitura é permitida antes da segunda etapa porque, no primeiro acesso,
+    // o sistema precisa conferir se a pessoa é da equipe antes de cadastrar o app autenticador.
+    // Ninguém altera pelo site por enquanto: o Administrador cadastra pelo console.
+    match /equipe/{email} {
+      allow read: if request.auth != null
+        && request.auth.token.email_verified == true
+        && emailDoLogin() == email;
+      allow write: if false;
+    }
+
+    // Todo o resto fica fechado até os próximos blocos (projetos, clientes, logs),
+    // que vão usar membroAtivo() e as permissões por usuário.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
