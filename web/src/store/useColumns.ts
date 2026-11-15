@@ -8,14 +8,16 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-/** Colunas do quadro: começam com as 6 padrão e podem ser criadas e reordenadas. */
+/** Colunas do quadro: começam com as 6 padrão e podem ser criadas, renomeadas, removidas e reordenadas. */
 export function useColumns() {
   const [columns, setColumns] = useState<KanbanColumn[]>(() => {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as KanbanColumn[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0)
+          // Coluna padrão renomeada de "Projeto" para "Estudo Preliminar" (15/11/2026)
+          return parsed.map((c) => (c.id === 'em_projeto' && c.label === 'Projeto' ? { ...c, label: 'Estudo Preliminar' } : c));
       }
     } catch {
       /* ignora dados corrompidos */
@@ -44,7 +46,16 @@ export function useColumns() {
       return next;
     });
 
+  const renameColumn = (id: string, label: string) => {
+    const nome = label.trim();
+    if (!nome) return;
+    setColumns((prev) => prev.map((c) => (c.id === id ? { ...c, label: nome } : c)));
+  };
+
+  /** Remove a coluna; quem chama garante que ela está vazia e que não é a última. */
+  const removeColumn = (id: string) => setColumns((prev) => (prev.length > 1 ? prev.filter((c) => c.id !== id) : prev));
+
   const resetColumns = () => setColumns(KANBAN_COLUMNS);
 
-  return { columns, addColumn, moveColumn, resetColumns };
+  return { columns, addColumn, moveColumn, renameColumn, removeColumn, resetColumns };
 }

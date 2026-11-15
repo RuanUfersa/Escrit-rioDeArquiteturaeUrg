@@ -9,6 +9,10 @@ interface Props {
   columns: KanbanColumn[];
   onAddColumn: (label: string) => void;
   onMoveColumn: (id: string, dir: -1 | 1) => void;
+  onRenameColumn: (id: string, label: string) => void;
+  onRemoveColumn: (id: string) => void;
+  /** Todos os projetos, sem filtro: usados para impedir remover coluna com projetos. */
+  allProjects: Project[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onMove: (id: string, to: KanbanStatus) => void;
@@ -31,9 +35,10 @@ const TYPE_COLOR: Record<ProjectType, string> = {
   interiores: 'text-sand-700',
 };
 
-const COL_LABEL_CURTO: Record<string, string> = {
-  detalhamento_entrega: 'Detalhamento',
-};
+/** Nome curto só para a coluna padrão de nome longo; nomes editados aparecem como estão. */
+function nomeCurto(c: KanbanColumn) {
+  return c.id === 'detalhamento_entrega' && c.label === 'Detalhamento / Entrega' ? 'Detalhamento' : c.label;
+}
 
 function Card({
   p,
@@ -127,14 +132,16 @@ function Card({
   );
 }
 
-export default function KanbanBoard({ projects, codes, columns, onAddColumn, onMoveColumn, selectedId, onSelect, onMove, onDelete }: Props) {
+export default function KanbanBoard({ projects, codes, columns, onAddColumn, onMoveColumn, onRenameColumn, onRemoveColumn, allProjects, selectedId, onSelect, onMove, onDelete }: Props) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<KanbanStatus | null>(null);
-  const [stage, setStage] = useState<KanbanStatus>(() => {
+  const [stageEscolhido, setStage] = useState<KanbanStatus>(() => {
     const first = columns.find((c) => projects.some((p) => p.statusKanban === c.id));
     return first?.id ?? columns[0]?.id ?? 'novo';
   });
 
+  // Se a coluna escolhida for removida, volta para a primeira.
+  const stage = columns.some((c) => c.id === stageEscolhido) ? stageEscolhido : (columns[0]?.id ?? '');
   const stageItems = projects.filter((p) => p.statusKanban === stage);
   const [editando, setEditando] = useState(false);
 
@@ -149,7 +156,16 @@ export default function KanbanBoard({ projects, codes, columns, onAddColumn, onM
           {editando ? 'Fechar edição de colunas' : 'Editar colunas'}
         </button>
       </div>
-      {editando && <ColumnEditor columns={columns} onAdd={onAddColumn} onMove={onMoveColumn} />}
+      {editando && (
+        <ColumnEditor
+          columns={columns}
+          projects={allProjects}
+          onAdd={onAddColumn}
+          onMove={onMoveColumn}
+          onRename={onRenameColumn}
+          onRemove={onRemoveColumn}
+        />
+      )}
 
       {/* Celular e tablet: um estágio por vez, troca pelos botões */}
       <div className="flex flex-col gap-3 lg:hidden">
@@ -165,7 +181,7 @@ export default function KanbanBoard({ projects, codes, columns, onAddColumn, onM
                 onClick={() => setStage(c.id)}
                 className={`h-10 shrink-0 whitespace-nowrap rounded-full border px-3.5 text-[13px] font-medium ${on ? 'border-terra-600 bg-terra-600 text-paper' : 'border-sand-300 text-sand-800'}`}
               >
-                {COL_LABEL_CURTO[c.id] ?? c.label} <span className="font-mono opacity-80">{n}</span>
+                {nomeCurto(c)} <span className="font-mono opacity-80">{n}</span>
               </button>
             );
           })}
@@ -219,7 +235,7 @@ export default function KanbanBoard({ projects, codes, columns, onAddColumn, onM
               >
                 <div className="flex items-center justify-between">
                   <h2 className="font-mono text-[11px] font-medium tracking-[0.14em] text-sand-700">
-                    {(COL_LABEL_CURTO[col.id] ?? col.label).toUpperCase()}
+                    {nomeCurto(col).toUpperCase()}
                   </h2>
                   <span className="font-mono text-[11px] text-sand-700">{items.length}</span>
                 </div>
@@ -259,41 +275,119 @@ export default function KanbanBoard({ projects, codes, columns, onAddColumn, onM
 
 function ColumnEditor({
   columns,
+  projects,
   onAdd,
   onMove,
+  onRename,
+  onRemove,
 }: {
   columns: KanbanColumn[];
+  projects: Project[];
   onAdd: (label: string) => void;
   onMove: (id: string, dir: -1 | 1) => void;
+  onRename: (id: string, label: string) => void;
+  onRemove: (id: string) => void;
 }) {
   const [nome, setNome] = useState('');
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editNome, setEditNome] = useState('');
+  const [aviso, setAviso] = useState('');
+  const iconBtn = 'h-9 w-9 shrink-0 rounded-lg border border-sand-300 text-sand-800 hover:bg-sand-100 disabled:opacity-30';
+  const txtBtn = 'h-9 shrink-0 rounded-lg border px-2.5 text-xs font-medium';
+
+  function remover(c: KanbanColumn) {
+    const n = projects.filter((p) => p.statusKanban === c.id).length;
+    if (columns.length <= 1) {
+      setAviso('O quadro precisa ter pelo menos uma coluna.');
+      return;
+    }
+    if (n > 0) {
+      setAviso(`"${c.label}" tem ${n} ${n === 1 ? 'projeto' : 'projetos'}. Mova ${n === 1 ? 'o projeto' : 'os projetos'} para outra coluna antes de remover.`);
+      return;
+    }
+    if (confirm(`Remover a coluna "${c.label}"? (Na versão final, a exclusão vai pedir aprovação do Gerente.)`)) {
+      onRemove(c.id);
+      setAviso('');
+    }
+  }
+
+  function salvar(id: string) {
+    if (!editNome.trim()) return;
+    onRename(id, editNome);
+    setEditId(null);
+  }
+
   return (
     <section aria-label="Editar colunas" className="flex flex-col gap-3 rounded-2xl border border-sand-200 bg-paper p-4">
       <div className="label-mono">Colunas do quadro · ordem da esquerda para a direita</div>
       <ol className="flex flex-col gap-1.5">
         {columns.map((c, i) => (
-          <li key={c.id} className="flex items-center gap-2 rounded-lg border border-sand-200 px-3 py-1.5">
+          <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-sand-200 px-3 py-1.5">
             <span className="w-6 font-mono text-[10px] text-sand-600">{String(i + 1).padStart(2, '0')}</span>
-            <span className="flex-1 text-sm">{c.label}</span>
-            <button
-              onClick={() => onMove(c.id, -1)}
-              disabled={i === 0}
-              aria-label={`Mover ${c.label} para a esquerda`}
-              className="h-9 w-9 rounded-lg border border-sand-300 text-sand-800 hover:bg-sand-100 disabled:opacity-30"
-            >
-              ←
-            </button>
-            <button
-              onClick={() => onMove(c.id, 1)}
-              disabled={i === columns.length - 1}
-              aria-label={`Mover ${c.label} para a direita`}
-              className="h-9 w-9 rounded-lg border border-sand-300 text-sand-800 hover:bg-sand-100 disabled:opacity-30"
-            >
-              →
-            </button>
+            {editId === c.id ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  salvar(c.id);
+                }}
+                className="flex min-w-[12rem] flex-1 flex-wrap gap-2"
+              >
+                <label className="sr-only" htmlFor={`col-${c.id}`}>Novo nome da coluna {c.label}</label>
+                <input
+                  id={`col-${c.id}`}
+                  autoFocus
+                  value={editNome}
+                  onChange={(e) => setEditNome(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Escape' && setEditId(null)}
+                  maxLength={40}
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-terra-500 bg-paper px-2.5 text-sm outline-none"
+                />
+                <button type="submit" disabled={!editNome.trim()} className={`${txtBtn} border-terra-600 bg-terra-600 text-paper disabled:opacity-40`}>
+                  Salvar
+                </button>
+                <button type="button" onClick={() => setEditId(null)} className={`${txtBtn} border-sand-300 text-sand-800 hover:bg-sand-100`}>
+                  Cancelar
+                </button>
+              </form>
+            ) : (
+              <>
+                <span className="min-w-[8rem] flex-1 break-words text-sm">{c.label}</span>
+                <div className="ml-auto flex gap-2">
+                <button
+                  onClick={() => {
+                    setEditId(c.id);
+                    setEditNome(c.label);
+                    setAviso('');
+                  }}
+                  aria-label={`Editar nome de ${c.label}`}
+                  className={`${txtBtn} border-sand-300 text-sand-800 hover:bg-sand-100`}
+                >
+                  Editar
+                </button>
+                <button onClick={() => onMove(c.id, -1)} disabled={i === 0} aria-label={`Mover ${c.label} para a esquerda`} className={iconBtn}>
+                  ←
+                </button>
+                <button onClick={() => onMove(c.id, 1)} disabled={i === columns.length - 1} aria-label={`Mover ${c.label} para a direita`} className={iconBtn}>
+                  →
+                </button>
+                <button
+                  onClick={() => remover(c)}
+                  aria-label={`Remover coluna ${c.label}`}
+                  className={`${txtBtn} border-sand-300 text-terra-700 hover:bg-terra-50`}
+                >
+                  Remover
+                </button>
+                </div>
+              </>
+            )}
           </li>
         ))}
       </ol>
+      {aviso && (
+        <p role="alert" className="rounded-lg bg-linen px-3 py-2 text-xs text-terra-800">
+          {aviso}
+        </p>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();

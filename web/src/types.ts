@@ -115,7 +115,7 @@ export interface Project {
 export const KANBAN_COLUMNS: KanbanColumn[] = [
   { id: 'novo', label: 'Novo' },
   { id: 'em_levantamento', label: 'Levantamento' },
-  { id: 'em_projeto', label: 'Projeto' },
+  { id: 'em_projeto', label: 'Estudo Preliminar' },
   { id: 'em_apresentacao', label: 'Apresentação' },
   { id: 'detalhamento_entrega', label: 'Detalhamento / Entrega' },
   { id: 'concluido', label: 'Concluído' },

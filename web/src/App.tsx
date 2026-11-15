@@ -46,7 +46,7 @@ function SearchIcon() {
 export default function App() {
   const { projects, add, update, remove, reset } = useProjects();
   const notif = useNotifications();
-  const { columns, addColumn, moveColumn, resetColumns } = useColumns();
+  const { columns, addColumn, moveColumn, renameColumn, removeColumn, resetColumns } = useColumns();
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'todas' | ProjectType>('todas');
@@ -186,6 +186,9 @@ export default function App() {
               columns={columns}
               onAddColumn={addColumn}
               onMoveColumn={moveColumn}
+              onRenameColumn={renameColumn}
+              onRemoveColumn={removeColumn}
+              allProjects={projects}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onMove={(id, to) => update(id, { statusKanban: to })}
