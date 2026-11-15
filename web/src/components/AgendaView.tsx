@@ -30,9 +30,9 @@ export default function AgendaView({ projects, onSelect }: Props) {
 
   return (
     <div>
-      <div className="mb-3 rounded-xl bg-sand-50 p-3 text-xs text-sand-600">
+      <div className="mb-4 rounded-xl border border-dashed border-sand-300 p-3 text-xs text-sand-700">
         <b>Agenda interna</b> — protótipo de navegação simulando eventos do Google Agenda ocupados.
-        Clique em um evento para abrir o projeto. Conflito entre projetos aparece em <span className="font-medium text-red-700">vermelho</span>.
+        Clique em um evento para abrir o projeto. Conflito entre projetos aparece em <span className="font-medium text-terra-700">destaque</span>.
       </div>
 
       <div className="grid grid-cols-1 gap-2 md:grid-cols-7">
@@ -44,17 +44,17 @@ export default function AgendaView({ projects, onSelect }: Props) {
             .sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
           const isHoje = day === hoje;
           return (
-            <div key={day} className={`flex min-h-[180px] flex-col rounded-2xl border p-2 ${isHoje ? 'border-terra-600 bg-terra-50' : 'border-sand-200 bg-white'}`}>
+            <div key={day} className={`flex min-h-[180px] flex-col rounded-2xl border p-2 ${isHoje ? 'border-terra-600 bg-terra-50' : 'border-sand-200 bg-paper'}`}>
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-sand-600">{nomeDia}</span>
-                <span className={`text-xs font-medium ${isHoje ? 'text-terra-700' : 'text-sand-500'}`}>{fmt(day)}</span>
+                <span className="label-mono">{nomeDia}</span>
+                <span className={`text-xs font-medium ${isHoje ? 'text-terra-700' : 'text-sand-700'}`}>{fmt(day)}</span>
               </div>
               <div className="flex flex-1 flex-col gap-1">
                 {evs.map((e) => (
                   <button
                     key={e.id}
                     onClick={() => onSelect(e.projectId)}
-                    className={`block rounded-lg p-2 text-left text-xs ${e.conflito ? 'bg-red-100 text-red-800' : 'bg-terra-600 text-white'}`}
+                    className={`block rounded-lg p-2 text-left text-xs ${e.conflito ? 'bg-terra-100 text-terra-900 ring-1 ring-terra-400' : 'bg-sand-950 text-cream'}`}
                     title={e.conflito ? 'Conflito: mais de um projeto no período' : 'Abrir projeto'}
                   >
                     <div className="font-medium">{e.horaInicio}–{e.horaFim}</div>
@@ -63,7 +63,7 @@ export default function AgendaView({ projects, onSelect }: Props) {
                   </button>
                 ))}
                 {evs.length === 0 && (
-                  <div className="rounded-lg border border-dashed border-sand-300 p-2 text-center text-[11px] text-sand-400">livre</div>
+                  <div className="rounded-lg border border-dashed border-sand-300 p-2 text-center text-[11px] text-sand-600">livre</div>
                 )}
               </div>
             </div>
@@ -72,13 +72,13 @@ export default function AgendaView({ projects, onSelect }: Props) {
       </div>
 
       {pendentes.length > 0 && (
-        <div className="mt-3 rounded-xl border border-sand-200 bg-white p-3">
-          <div className="mb-2 text-sm font-semibold text-sand-900">Por agendar ({pendentes.length})</div>
+        <div className="mt-3 rounded-2xl border border-sand-200 bg-paper p-3.5">
+          <div className="mb-2 label-mono">Por agendar ({pendentes.length})</div>
           {pendentes.map((pnd, i) => (
             <div key={i} className="flex items-center justify-between border-b border-sand-100 py-1 text-sm last:border-0">
-              <span className="text-xs text-sand-500">{pnd.fase}</span>
+              <span className="text-xs text-sand-700">{pnd.fase}</span>
               <span className="ml-2 flex-1 text-sand-900">{pnd.titulo} — <b>{pnd.projectNome}</b></span>
-              <button onClick={() => onSelect(pnd.projectId)} className="text-xs text-terra-600 underline">abrir projeto</button>
+              <button onClick={() => onSelect(pnd.projectId)} className="text-xs text-terra-700 underline">abrir projeto</button>
             </div>
           ))}
         </div>

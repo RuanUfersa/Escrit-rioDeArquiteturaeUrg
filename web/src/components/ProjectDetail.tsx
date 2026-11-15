@@ -1,26 +1,46 @@
 import { useState } from 'react';
 import type { Project, ScopeItemStatus, Financeiro, Parcela, DocumentoFiscal } from '../types';
-import { PROJECT_TYPE_LABELS } from '../types';
+import { KANBAN_COLUMNS, PROJECT_TYPE_LABELS } from '../types';
 import { SCOPE_TEMPLATES } from '../data/scopeTemplates';
 import { formatBRL, MAX_UPLOAD_BYTES } from '../data/financeiro';
+import { diasAte, fmtDate, prazoTexto } from '../lib/format';
 
 interface Props {
   project: Project;
+  code: string;
   onClose: () => void;
   onUpdate: (id: string, patch: Partial<Project>) => void;
 }
 
-const NEXT: Record<ScopeItemStatus, ScopeItemStatus> = {
-  pendente: 'agendado',
-  agendado: 'em_andamento',
-  em_andamento: 'em_revisao',
-  em_revisao: 'concluido',
-  concluido: 'pendente',
+type Tab = 'checklist' | 'financeiro' | 'contrato';
+
+const STATUS_LABEL: Record<ScopeItemStatus, string> = {
+  pendente: 'Pendente',
+  agendado: 'Agendado',
+  em_andamento: 'Em andamento',
+  em_revisao: 'Em revisão',
+  concluido: 'Concluído',
 };
 
-export default function ProjectDetail({ project, onClose, onUpdate }: Props) {
+// Bolinha de status, como na proposta visual.
+function Dot({ status }: { status: ScopeItemStatus }) {
+  if (status === 'concluido') return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-oliva-600" aria-hidden="true" />;
+  if (status === 'pendente') return <span className="h-2.5 w-2.5 shrink-0 rounded-full border-[1.5px] border-sand-400" aria-hidden="true" />;
+  return <span className="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-terra-500" aria-hidden="true" />;
+}
+
+const STATUS_STYLE: Record<ScopeItemStatus, string> = {
+  pendente: 'bg-sand-100 text-sand-800',
+  agendado: 'bg-terra-50 text-terra-800',
+  em_andamento: 'bg-terra-100 text-terra-800',
+  em_revisao: 'bg-terra-100 text-terra-800',
+  concluido: 'bg-oliva-100 text-oliva-800',
+};
+
+export default function ProjectDetail({ project, code, onClose, onUpdate }: Props) {
   const template = SCOPE_TEMPLATES[project.tipo];
   const [docMsg, setDocMsg] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>('checklist');
 
   function updateFinanceiro(patch: Partial<Financeiro>) {
     onUpdate(project.id, { financeiro: { ...project.financeiro, ...patch } });
@@ -81,10 +101,8 @@ export default function ProjectDetail({ project, onClose, onUpdate }: Props) {
     else if (parId) updateParcela(parId, { comprovante: undefined });
   }
 
-  function cycleStatus(templateId: string) {
-    const escopo = project.escopo.map((s) =>
-      s.templateId === templateId ? { ...s, status: NEXT[s.status] } : s,
-    );
+  function setStatus(templateId: string, status: ScopeItemStatus) {
+    const escopo = project.escopo.map((s) => (s.templateId === templateId ? { ...s, status } : s));
     onUpdate(project.id, { escopo });
   }
 
@@ -108,165 +126,271 @@ export default function ProjectDetail({ project, onClose, onUpdate }: Props) {
   }
 
   const concluidos = project.escopo.filter((s) => s.status === 'concluido').length;
-
+  const fin = project.financeiro;
   const totalPago =
-    (project.financeiro.sinal.status === 'pago' ? project.financeiro.sinal.valor : 0) +
-    project.financeiro.parcelas
-      .filter((p) => p.status === 'pago')
+    (fin.sinal.status === 'pago' ? fin.sinal.valor : 0) +
+    fin.parcelas.filter((p) => p.status === 'pago').reduce((acc, p) => acc + p.valor, 0);
+  const atrasado =
+    (fin.sinal.status !== 'pago' && diasAte(project.contrato.dataAssinatura) < 0 ? fin.sinal.valor : 0) +
+    fin.parcelas
+      .filter((p) => p.status !== 'pago' && diasAte(p.vencimento) < 0)
       .reduce((acc, p) => acc + p.valor, 0);
+  const aVencer = fin.valorTotal - totalPago - atrasado;
+  const pctPago = fin.valorTotal ? (totalPago / fin.valorTotal) * 100 : 0;
+  const pctAtrasado = fin.valorTotal ? (atrasado / fin.valorTotal) * 100 : 0;
+
+  const prazoFinal = (() => {
+    const d = new Date(project.contrato.dataAssinatura + 'T00:00:00');
+    d.setDate(d.getDate() + project.contrato.prazoDias);
+    return d.toISOString().slice(0, 10);
+  })();
+  const estagio = KANBAN_COLUMNS.find((c) => c.id === project.statusKanban)?.label ?? '';
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'checklist', label: 'Checklist' },
+    { id: 'financeiro', label: 'Financeiro' },
+    { id: 'contrato', label: 'Contrato' },
+  ];
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-sand-950/50" onClick={onClose}>
-      <div className="h-full w-full max-w-xl overflow-y-auto bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="text-xs font-medium text-terra-700">{PROJECT_TYPE_LABELS[project.tipo]} • {concluidos}/{project.escopo.length} concluídos</div>
-            <h2 className="text-xl font-semibold text-sand-900">{project.nome}</h2>
-            <div className="text-sm text-sand-500">{project.clienteNome} • {project.clienteEmail} • {project.clienteTelefone}</div>
-          </div>
-          <button onClick={onClose} className="rounded-lg px-3 py-1 text-sm text-sand-500 hover:bg-sand-100">✕</button>
-        </div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={project.nome}
+        className="flex h-full w-full max-w-5xl flex-col overflow-y-auto bg-cream shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex flex-col gap-5 px-5 py-5 sm:px-8 sm:py-7">
+          <button onClick={onClose} className="self-start font-mono text-[11px] tracking-[0.14em] text-terra-700 hover:text-terra-900">
+            ← VOLTAR
+          </button>
 
-        <div className="mt-4 grid grid-cols-1 gap-2 rounded-xl bg-sand-50 p-3 text-sm">
-          <div><b>Pessoal:</b> {project.enderecoPessoal}</div>
-          <div><b>Obra:</b> {project.enderecoObra}</div>
-          {project.ambiente && <div><b>Ambiente:</b> {project.ambiente}</div>}
-          <div><b>Contrato:</b> {project.contrato.dataAssinatura} • {project.contrato.prazoDias} dias • {project.contrato.condicoesPagamento}</div>
-          <div className="text-sand-600">{project.contrato.clausulas}</div>
-        </div>
-
-        <h3 className="mb-2 mt-5 text-sm font-semibold text-sand-900">Checklist de escopo — {template.label}</h3>
-        <div className="flex flex-col gap-2">
-          {project.escopo.map((s) => {
-            const meta = template.items.find((t) => t.id === s.templateId);
-            return (
-              <div key={s.templateId} className="rounded-xl border border-sand-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide text-sand-400">{s.fase}</div>
-                    <div className="text-sm font-medium text-sand-900">{s.titulo}</div>
-                    {meta?.descricao && <div className="text-xs text-sand-500">{meta.descricao}</div>}
-                  </div>
-                  <button onClick={() => cycleStatus(s.templateId)} className="shrink-0 rounded-lg border border-sand-300 px-2 py-1 text-xs hover:bg-sand-50">
-                    {s.status}
-                  </button>
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                  {meta?.requerAgendamento && (
-                    <label className="flex items-center gap-1 text-sand-600">
-                      🗓 <input type="date" value={s.scheduledAt ?? ''} onChange={(e) => schedule(s.templateId, e.target.value)} className="rounded-md border border-sand-300 px-1 py-0.5" />
-                      <span className="text-[11px] text-sand-400">(interno — não vai ao cliente)</span>
-                    </label>
-                  )}
-                  {meta?.permiteRevisao && (
-                    <span className="flex items-center gap-1">
-                      Revisões: <b>{s.revisoesUsadas}/2</b>
-                      <button onClick={() => addRevisao(s.templateId)} className="rounded-md bg-terra-600 px-2 py-0.5 text-white">+ revisão</button>
-                    </span>
-                  )}
-                  {s.exigeDefinicaoCliente && (
-                    <span className="rounded-md bg-amber-100 px-2 py-0.5 font-medium text-amber-800">3ª alteração exige definição do cliente</span>
-                  )}
-                  {s.status === 'concluido' && <span className="text-oliva-600">✓ concluído</span>}
-                </div>
+          <header className="flex flex-wrap items-end gap-5 border-b border-sand-200 pb-5">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5 font-mono text-[11px] tracking-[0.12em] text-sand-600">
+                <span>{code}</span>
+                <span>·</span>
+                <span className="text-terra-600">{PROJECT_TYPE_LABELS[project.tipo].toUpperCase()}</span>
               </div>
-            );
-          })}
-        </div>
-
-        <h3 className="mb-2 mt-5 text-sm font-semibold text-sand-900">Financeiro</h3>
-        <div className="rounded-xl border border-sand-200 bg-white p-3">
-          <div className="mb-2 grid grid-cols-3 gap-2 text-sm">
-            <div>
-              <div className="text-xs text-sand-500">Total</div>
-              <div className="font-semibold">{formatBRL(project.financeiro.valorTotal)}</div>
+              <h2 className="mt-1.5 mb-1 font-display text-[26px] font-semibold tracking-tight sm:text-[32px]">{project.nome}</h2>
+              <div className="text-[13px] text-sand-700">
+                {project.clienteNome} · {project.clienteEmail}
+                {project.clienteTelefone ? ` · ${project.clienteTelefone}` : ''}
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-sand-500">Pago</div>
-              <div className="font-semibold text-oliva-600">{formatBRL(totalPago)}</div>
-            </div>
-            <div>
-              <div className="text-xs text-sand-500">Pendente</div>
-              <div className="font-semibold text-red-700">{formatBRL(project.financeiro.valorTotal - totalPago)}</div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-sand-200 p-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <dl className="flex gap-7 sm:ml-auto">
               <div>
-                <div className="text-[11px] uppercase tracking-wide text-sand-400">Sinal 15% — assinatura</div>
-                <div className="text-sm font-medium text-sand-900">
-                  {formatBRL(project.financeiro.sinal.valor)}{' '}
-                  <span className="text-xs font-normal text-sand-500">venc. {project.contrato.dataAssinatura}</span>
-                </div>
-                {project.financeiro.sinal.pagoEm && (
-                  <div className="text-[11px] text-oliva-600">pago em {project.financeiro.sinal.pagoEm}</div>
-                )}
+                <dt className="label-mono">Estágio</dt>
+                <dd className="font-display text-lg font-semibold">{estagio}</dd>
               </div>
+              <div>
+                <dt className="label-mono">Escopo</dt>
+                <dd className="font-display text-lg font-semibold">{concluidos} / {project.escopo.length}</dd>
+              </div>
+              <div>
+                <dt className="label-mono">Prazo</dt>
+                <dd className="font-display text-lg font-semibold">{fmtDate(prazoFinal)}</dd>
+              </div>
+            </dl>
+          </header>
+
+          <div role="tablist" aria-label="Seções do projeto" className="flex flex-wrap gap-1">
+            {TABS.map((t) => (
               <button
-                onClick={() => togglePago('sinal')}
-                className={`rounded-lg border px-2 py-1 text-xs ${project.financeiro.sinal.status === 'pago' ? 'border-oliva-300 bg-oliva-50 text-oliva-700' : 'border-sand-300 hover:bg-sand-50'}`}
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`h-10 rounded-[10px] border px-4 text-[13px] font-medium sm:h-9 ${tab === t.id ? 'border-sand-950 bg-sand-950 text-cream' : 'border-sand-200 text-sand-800 hover:bg-sand-100'}`}
               >
-                {project.financeiro.sinal.status === 'pago' ? '✓ pago' : 'marcar pago'}
+                {t.label}
               </button>
-            </div>
-            <DocUpload
-              label="Comprovante"
-              doc={project.financeiro.sinal.comprovante}
-              onUpload={(f) => uploadDoc('sinal', null, f)}
-              onRemove={() => removeDoc('sinal', null)}
-            />
+            ))}
           </div>
 
-          {project.financeiro.parcelas.map((p, i) => (
-            <div key={p.id} className="mt-2 rounded-lg border border-sand-200 p-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-[11px] uppercase tracking-wide text-sand-400">Parcela {i + 1}</div>
-                  <div className="text-sm font-medium text-sand-900">{p.descricao}</div>
-                  <div className="text-xs text-sand-500">
-                    {formatBRL(p.valor)} • venc.{' '}
-                    <input
-                      type="date"
-                      className="rounded-md border border-sand-300 px-1 py-0.5 text-xs"
-                      value={p.vencimento}
-                      onChange={(e) => updateParcela(p.id, { vencimento: e.target.value })}
-                    />
+          {tab === 'checklist' && (
+            <section aria-label="Checklist de escopo" className="overflow-hidden rounded-2xl border border-sand-200 bg-paper">
+              <div className="border-b border-sand-100 px-[18px] py-3 label-mono">Checklist — {template.label}</div>
+              {project.escopo.map((s) => {
+                const meta = template.items.find((t) => t.id === s.templateId);
+                return (
+                  <div key={s.templateId} className="flex flex-col gap-2 border-b border-sand-100 px-[18px] py-3.5 last:border-0">
+                    <div className="flex items-center gap-3.5">
+                      <Dot status={s.status} />
+                      <div className="min-w-0 flex-1">
+                        <div className="label-mono">{s.fase}</div>
+                        <div className="text-sm font-medium">{s.titulo}</div>
+                        {meta?.descricao && <div className="text-xs text-sand-700">{meta.descricao}</div>}
+                      </div>
+                      <label className="shrink-0">
+                        <span className="sr-only">Status de {s.titulo}</span>
+                        <select
+                          value={s.status}
+                          onChange={(e) => setStatus(s.templateId, e.target.value as ScopeItemStatus)}
+                          className={`h-9 rounded-md border-0 px-2 font-mono text-[10px] tracking-[0.1em] uppercase ${STATUS_STYLE[s.status]}`}
+                        >
+                          {(Object.keys(STATUS_LABEL) as ScopeItemStatus[]).map((k) => (
+                            <option key={k} value={k}>{STATUS_LABEL[k]}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    {(meta?.requerAgendamento || meta?.permiteRevisao || s.exigeDefinicaoCliente) && (
+                      <div className="ml-6 flex flex-wrap items-center gap-2 text-xs text-sand-700">
+                        {meta?.requerAgendamento && (
+                          <label className="flex items-center gap-1.5">
+                            Data
+                            <input
+                              type="date"
+                              value={s.scheduledAt ?? ''}
+                              onChange={(e) => schedule(s.templateId, e.target.value)}
+                              className="h-8 rounded-md border border-sand-300 bg-paper px-1.5"
+                            />
+                            <span className="text-[11px] text-sand-500">agenda interna, o cliente não vê</span>
+                          </label>
+                        )}
+                        {meta?.permiteRevisao && (
+                          <span className="flex items-center gap-1.5">
+                            Revisões <b className="font-mono">{s.revisoesUsadas} de 2</b>
+                            <button onClick={() => addRevisao(s.templateId)} className="h-8 rounded-md border border-terra-600 px-2 font-medium text-terra-700 hover:bg-terra-50">
+                              + revisão
+                            </button>
+                          </span>
+                        )}
+                        {s.exigeDefinicaoCliente && (
+                          <span className="rounded-md bg-terra-100 px-2 py-1 font-medium text-terra-900">3ª alteração exige definição do cliente</span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {p.pagoEm && <div className="text-[11px] text-oliva-600">pago em {p.pagoEm}</div>}
+                );
+              })}
+            </section>
+          )}
+
+          {tab === 'financeiro' && (
+            <section aria-label="Financeiro" className="flex flex-col gap-4">
+              <div className="rounded-2xl border border-sand-200 bg-paper p-[18px]">
+                <div className="label-mono">Valor do contrato</div>
+                <div className="mt-2 font-display text-[26px] font-semibold">{formatBRL(fin.valorTotal)}</div>
+                <div className="mt-2.5 flex h-1.5 overflow-hidden rounded-full bg-sand-100">
+                  <div className="bg-oliva-600" style={{ width: `${pctPago}%` }} />
+                  <div className="bg-terra-500" style={{ width: `${pctAtrasado}%` }} />
                 </div>
-                <button
-                  onClick={() => togglePago('parcela', p.id)}
-                  className={`rounded-lg border px-2 py-1 text-xs ${p.status === 'pago' ? 'border-oliva-300 bg-oliva-50 text-oliva-700' : 'border-sand-300 hover:bg-sand-50'}`}
-                >
-                  {p.status === 'pago' ? '✓ pago' : 'marcar pago'}
-                </button>
+                <div className="mt-2.5 grid gap-1.5 text-xs sm:grid-cols-3">
+                  <div className="flex justify-between gap-2 sm:flex-col"><span className="text-oliva-600">● Pago</span><span>{formatBRL(totalPago)}</span></div>
+                  <div className="flex justify-between gap-2 sm:flex-col"><span className="text-terra-600">● Atrasado</span><span>{formatBRL(atrasado)}</span></div>
+                  <div className="flex justify-between gap-2 sm:flex-col"><span className="text-sand-700">● A vencer</span><span>{formatBRL(aVencer)}</span></div>
+                </div>
               </div>
-              <DocUpload
-                label="Comprovante"
-                doc={p.comprovante}
-                onUpload={(f) => uploadDoc('parcela', p.id, f)}
-                onRemove={() => removeDoc('parcela', p.id)}
-              />
-            </div>
-          ))}
 
-          <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-sand-50 p-2">
-            <div className="text-sm">
-              <span className="font-medium text-sand-900">Nota fiscal</span>
-              <span className="ml-1 text-xs text-sand-500">(emitida fora do sistema — prefeitura)</span>
-            </div>
-            <DocUpload
-              label="Upload NF"
-              doc={project.financeiro.notaFiscal}
-              onUpload={(f) => uploadDoc('nota', null, f)}
-              onRemove={() => removeDoc('nota', null)}
-            />
-          </div>
+              <div className="overflow-hidden rounded-2xl border border-sand-200 bg-paper">
+                <PagamentoLinha
+                  titulo="Sinal 15% — assinatura"
+                  valor={fin.sinal.valor}
+                  vencimento={project.contrato.dataAssinatura}
+                  pago={fin.sinal.status === 'pago'}
+                  pagoEm={fin.sinal.pagoEm}
+                  onToggle={() => togglePago('sinal')}
+                >
+                  <DocUpload label="Comprovante" doc={fin.sinal.comprovante} onUpload={(f) => uploadDoc('sinal', null, f)} onRemove={() => removeDoc('sinal', null)} />
+                </PagamentoLinha>
+                {fin.parcelas.map((p) => (
+                  <PagamentoLinha
+                    key={p.id}
+                    titulo={p.descricao}
+                    valor={p.valor}
+                    vencimento={p.vencimento}
+                    pago={p.status === 'pago'}
+                    pagoEm={p.pagoEm}
+                    onToggle={() => togglePago('parcela', p.id)}
+                    onVencimento={(v) => updateParcela(p.id, { vencimento: v })}
+                  >
+                    <DocUpload label="Comprovante" doc={p.comprovante} onUpload={(f) => uploadDoc('parcela', p.id, f)} onRemove={() => removeDoc('parcela', p.id)} />
+                  </PagamentoLinha>
+                ))}
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-sand-50 px-[18px] py-3.5">
+                  <div className="text-sm">
+                    <span className="font-medium">Nota fiscal</span>
+                    <span className="ml-1 text-xs text-sand-600">(emitida fora do sistema)</span>
+                  </div>
+                  <DocUpload label="Enviar NF" doc={fin.notaFiscal} onUpload={(f) => uploadDoc('nota', null, f)} onRemove={() => removeDoc('nota', null)} />
+                </div>
+              </div>
+              {docMsg && <div className="rounded-lg bg-terra-50 px-3 py-2 text-xs text-terra-900">{docMsg}</div>}
+            </section>
+          )}
 
-          {docMsg && <div className="mt-2 rounded-lg bg-amber-50 px-3 py-1 text-xs text-amber-800">{docMsg}</div>}
+          {tab === 'contrato' && (
+            <section aria-label="Contrato" className="grid gap-4 rounded-2xl border border-sand-200 bg-paper p-[18px] text-sm sm:grid-cols-2">
+              <div><div className="label-mono">Assinatura</div><div className="mt-1">{fmtDate(project.contrato.dataAssinatura)}</div></div>
+              <div><div className="label-mono">Prazo</div><div className="mt-1">{project.contrato.prazoDias} dias · até {fmtDate(prazoFinal)}</div></div>
+              <div><div className="label-mono">Pagamento</div><div className="mt-1">Sinal 15% + {project.contrato.condicoesPagamento}</div></div>
+              {project.ambiente && <div><div className="label-mono">Ambiente</div><div className="mt-1">{project.ambiente}</div></div>}
+              <div className="sm:col-span-2"><div className="label-mono">Endereço do cliente</div><div className="mt-1">{project.enderecoPessoal}</div></div>
+              <div className="sm:col-span-2"><div className="label-mono">Endereço da obra</div><div className="mt-1">{project.enderecoObra}</div></div>
+              <div className="sm:col-span-2"><div className="label-mono">Cláusulas</div><div className="mt-1 text-sand-800">{project.contrato.clausulas}</div></div>
+            </section>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PagamentoLinha({
+  titulo,
+  valor,
+  vencimento,
+  pago,
+  pagoEm,
+  onToggle,
+  onVencimento,
+  children,
+}: {
+  titulo: string;
+  valor: number;
+  vencimento: string;
+  pago: boolean;
+  pagoEm?: string;
+  onToggle: () => void;
+  onVencimento?: (v: string) => void;
+  children: React.ReactNode;
+}) {
+  const dias = diasAte(vencimento);
+  const atraso = !pago && dias < 0;
+  return (
+    <div className="flex flex-col gap-2 border-b border-sand-100 px-[18px] py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">{titulo}</div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-sand-700">
+            <span className="font-mono">{formatBRL(valor)}</span>
+            <span>·</span>
+            {onVencimento ? (
+              <label className="flex items-center gap-1">
+                venc.
+                <input type="date" value={vencimento} onChange={(e) => onVencimento(e.target.value)} className="h-7 rounded-md border border-sand-300 bg-paper px-1" />
+              </label>
+            ) : (
+              <span>venc. {fmtDate(vencimento)}</span>
+            )}
+            {pago ? (
+              <span className="text-oliva-600">pago em {fmtDate(pagoEm)}</span>
+            ) : (
+              <span className={atraso ? 'font-medium text-terra-700' : ''}>{prazoTexto(dias)}</span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={onToggle}
+          className={`h-9 rounded-lg border px-3 text-xs font-medium ${pago ? 'border-oliva-300 bg-oliva-50 text-oliva-700' : 'border-sand-300 hover:bg-sand-100'}`}
+        >
+          {pago ? '✓ Pago' : 'Marcar como pago'}
+        </button>
+      </div>
+      {children}
     </div>
   );
 }
@@ -283,8 +407,8 @@ function DocUpload({
   onRemove: () => void;
 }) {
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-2">
-      <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-sand-300 px-2 py-1 text-xs hover:bg-sand-50">
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-md border border-sand-300 px-2.5 text-xs hover:bg-sand-100">
         {label}
         <input
           type="file"
@@ -299,13 +423,13 @@ function DocUpload({
       {doc && (
         <span className="inline-flex items-center gap-1 rounded-md bg-sand-100 px-2 py-1 text-xs">
           {doc.nome}
-          {!doc.arquivo && <span className="text-sand-400">(só metadata)</span>}
+          {!doc.arquivo && <span className="text-sand-500">(só o nome)</span>}
           {doc.arquivo && (
-            <a className="text-terra-600 underline" href={doc.arquivo} target="_blank" rel="noreferrer" download={doc.nome}>
+            <a className="text-terra-700 underline" href={doc.arquivo} target="_blank" rel="noreferrer" download={doc.nome}>
               abrir
             </a>
           )}
-          <button type="button" onClick={onRemove} className="text-red-500 hover:underline">✕</button>
+          <button type="button" onClick={onRemove} aria-label="Remover arquivo" className="text-terra-700 hover:underline">✕</button>
         </span>
       )}
     </div>

@@ -77,15 +77,15 @@ export default function ProjectForm({ onSubmit, onClose }: Props) {
     onClose();
   }
 
-  const input = 'w-full rounded-lg border border-sand-300 px-3 py-2 text-sm text-sand-900 outline-none focus:border-terra-500';
-  const label = 'text-xs font-medium text-sand-600';
+  const input = 'h-11 w-full rounded-lg border border-sand-300 bg-paper px-3 text-sm text-sand-950 outline-none focus:border-terra-500 sm:h-10';
+  const label = 'mb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-sand-700';
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-sand-950/50 p-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+      <form onSubmit={handleSubmit} className="w-full max-w-2xl rounded-2xl bg-cream p-5 shadow-xl sm:p-6">
         <div className="mb-4 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-sand-900">Novo projeto</h2>
+            <h2 className="font-display text-[22px] font-semibold">Novo projeto</h2>
             <p className="text-sm text-sand-500">
               Tipo <b>{SCOPE_TEMPLATES[f.tipo].label}</b> gera <b>{previewCount} itens</b> de checklist automaticamente.
             </p>
@@ -93,7 +93,7 @@ export default function ProjectForm({ onSubmit, onClose }: Props) {
           <button type="button" onClick={onClose} className="rounded-lg px-3 py-1 text-sm text-sand-500 hover:bg-sand-100">✕</button>
         </div>
 
-        {err && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
+        {err && <div className="mb-3 rounded-lg bg-terra-50 px-3 py-2 text-sm text-terra-900">{err}</div>}
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="md:col-span-2">
@@ -185,8 +185,8 @@ export default function ProjectForm({ onSubmit, onClose }: Props) {
         </div>
 
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-sand-600 hover:bg-sand-100">Cancelar</button>
-          <button type="submit" className="rounded-lg bg-terra-600 px-4 py-2 text-sm font-medium text-white hover:bg-terra-700">Criar projeto</button>
+          <button type="button" onClick={onClose} className="h-11 rounded-[10px] px-4 text-sm text-sand-800 hover:bg-sand-100">Cancelar</button>
+          <button type="submit" className="h-11 rounded-[10px] bg-terra-600 px-5 text-sm font-semibold text-paper hover:bg-terra-700">Criar projeto</button>
         </div>
       </form>
     </div>

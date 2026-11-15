@@ -19,8 +19,14 @@ export function buildLembretes(projects: Project[], diasAntes = 3): Lembrete[] {
   hoje.setHours(0, 0, 0, 0);
   const out: Lembrete[] = [];
   for (const p of projects) {
-    for (const par of p.financeiro.parcelas) {
-      if (par.status === 'pago') continue;
+    // Cobranças do projeto: o sinal (vence na assinatura) e as parcelas.
+    const cobrancas = [
+      ...(p.financeiro.sinal.status === 'pago'
+        ? []
+        : [{ id: 'sinal', descricao: 'Sinal 15% — assinatura', vencimento: p.contrato.dataAssinatura, valor: p.financeiro.sinal.valor }]),
+      ...p.financeiro.parcelas.filter((par) => par.status !== 'pago'),
+    ];
+    for (const par of cobrancas) {
       const v = new Date(par.vencimento + 'T00:00:00');
       const diasAte = Math.round((v.getTime() - hoje.getTime()) / 86400000);
       if (diasAte > diasAntes) continue;
