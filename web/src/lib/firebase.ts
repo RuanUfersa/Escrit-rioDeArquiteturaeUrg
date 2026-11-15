@@ -1,18 +1,20 @@
-// Conexão com o Firebase. Os valores vêm das variáveis de ambiente VITE_FIREBASE_*
-// (arquivo .env.local no computador e "Environment Variables" na Vercel).
+// Conexão com o Firebase.
 // Essas chaves não são senha: quem protege os dados são as regras do Firestore
 // (https://firebase.google.com/docs/projects/api-keys).
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 
+// Valores do app Web do projeto "escritorio-arquitetura" (enviados pelo usuário em 15/11/2026).
+// As variáveis VITE_FIREBASE_* podem substituí-los, por exemplo para um projeto de testes.
+const env = import.meta.env;
 const config = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: env.VITE_FIREBASE_API_KEY || 'AIzaSyBSZHFJ8buAprAQCwldguUBfvl_F2BSz-o',
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || 'escritorio-arquitetura-cc55d.firebaseapp.com',
+  projectId: env.VITE_FIREBASE_PROJECT_ID || 'escritorio-arquitetura-cc55d',
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || 'escritorio-arquitetura-cc55d.firebasestorage.app',
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || '942513893175',
+  appId: env.VITE_FIREBASE_APP_ID || '1:942513893175:web:a74a75315ec3adb442b4b2',
 };
 
 /** true quando as variáveis obrigatórias foram cadastradas. */
