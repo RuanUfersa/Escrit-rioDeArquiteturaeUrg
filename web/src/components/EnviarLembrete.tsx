@@ -2,52 +2,23 @@ import { useEffect, useState } from 'react';
 import type { Lembrete } from '../data/notificacoes';
 import { formatBRL } from '../data/financeiro';
 import { fmtDate } from '../lib/format';
+import { MAX_CORPO, preencher, type CanalModelo, type ModeloMensagem } from '../lib/modelos';
 
 interface Props {
   lembrete: Lembrete;
+  modelos: ModeloMensagem[];
   onClose: () => void;
   onSend: (l: Lembrete, canal: 'email' | 'whatsapp', conteudo: { assunto?: string; mensagem: string }) => void;
 }
 
-const MAX_EMAIL = 2000;
-const MAX_WHATS = 1000;
+const MAX_EMAIL = MAX_CORPO.email;
+const MAX_WHATS = MAX_CORPO.whatsapp;
 
 function quando(l: Lembrete) {
   const data = fmtDate(l.vencimento);
   if (l.diasAte > 0) return `vence em ${data} (daqui a ${l.diasAte} ${l.diasAte === 1 ? 'dia' : 'dias'})`;
   if (l.diasAte === 0) return `vence hoje, ${data}`;
   return `venceu em ${data}`;
-}
-
-function primeiroNome(nome: string) {
-  return nome.trim().split(/\s+/)[0] ?? '';
-}
-
-function assuntoPadrao(l: Lembrete) {
-  return `Lembrete de pagamento · ${l.descricao} · ${l.projectNome}`;
-}
-
-function emailPadrao(l: Lembrete) {
-  return [
-    `Olá, ${primeiroNome(l.clienteNome)}!`,
-    '',
-    `Este é um lembrete do Ateliê sobre o projeto "${l.projectNome}": o pagamento referente a "${l.descricao}", no valor de ${formatBRL(l.valor)}, ${quando(l)}.`,
-    '',
-    'O pagamento pode ser feito por Pix. Depois de pagar, se puder, envie o comprovante respondendo a este e-mail.',
-    '',
-    'Se você já efetuou o pagamento, por favor desconsidere esta mensagem.',
-    '',
-    'Atenciosamente,',
-    'Ateliê',
-  ].join('\n');
-}
-
-function whatsPadrao(l: Lembrete) {
-  return [
-    `Olá, ${primeiroNome(l.clienteNome)}! Aqui é do Ateliê.`,
-    `Passando para lembrar que o pagamento referente a "${l.descricao}" do projeto "${l.projectNome}", no valor de ${formatBRL(l.valor)}, ${quando(l)}.`,
-    'Se você já efetuou o pagamento, por favor desconsidere esta mensagem.',
-  ].join('\n');
 }
 
 /**
@@ -60,10 +31,33 @@ function numeroWhats(tel: string) {
   return d;
 }
 
-export default function EnviarLembrete({ lembrete: l, onClose, onSend }: Props) {
-  const [assunto, setAssunto] = useState(() => assuntoPadrao(l));
-  const [email, setEmail] = useState(() => emailPadrao(l));
-  const [whats, setWhats] = useState(() => whatsPadrao(l));
+function padraoDe(modelos: ModeloMensagem[], canal: CanalModelo) {
+  return modelos.find((m) => m.canal === canal && m.padrao) ?? modelos.find((m) => m.canal === canal);
+}
+
+export default function EnviarLembrete({ lembrete: l, modelos, onClose, onSend }: Props) {
+  const modelosEmail = modelos.filter((m) => m.canal === 'email');
+  const modelosWhats = modelos.filter((m) => m.canal === 'whatsapp');
+  const [modeloEmailId, setModeloEmailId] = useState(() => padraoDe(modelos, 'email')?.id ?? '');
+  const [modeloWhatsId, setModeloWhatsId] = useState(() => padraoDe(modelos, 'whatsapp')?.id ?? '');
+  const modeloEmail = modelosEmail.find((m) => m.id === modeloEmailId);
+  const modeloWhats = modelosWhats.find((m) => m.id === modeloWhatsId);
+  const [assunto, setAssunto] = useState(() => preencher(modeloEmail?.assunto ?? '', l));
+  const [email, setEmail] = useState(() => preencher(modeloEmail?.corpo ?? '', l));
+  const [whats, setWhats] = useState(() => preencher(modeloWhats?.corpo ?? '', l));
+
+  function usarModeloEmail(id: string) {
+    const m = modelosEmail.find((x) => x.id === id);
+    setModeloEmailId(id);
+    setAssunto(preencher(m?.assunto ?? '', l));
+    setEmail(preencher(m?.corpo ?? '', l));
+  }
+
+  function usarModeloWhats(id: string) {
+    const m = modelosWhats.find((x) => x.id === id);
+    setModeloWhatsId(id);
+    setWhats(preencher(m?.corpo ?? '', l));
+  }
   const [emailFeito, setEmailFeito] = useState(false);
   const [whatsFeito, setWhatsFeito] = useState(false);
 
@@ -103,18 +97,19 @@ export default function EnviarLembrete({ lembrete: l, onClose, onSend }: Props) 
           </button>
         </header>
 
-        <p className="text-xs text-sand-700">Revise e edite as mensagens antes de enviar. As alterações valem só para este envio.</p>
+        <p className="text-xs text-sand-700">Escolha o modelo de cada canal e edite o texto se precisar. As alterações valem só para este envio; para mudar o modelo, use “Modelos de mensagem”.</p>
 
         <div className="grid gap-4 md:grid-cols-2">
           {/* E-mail */}
           <section aria-label="E-mail" className="flex flex-col gap-2.5 rounded-2xl border border-sand-200 bg-paper p-4">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-medium">✉ E-mail</h3>
-              <button onClick={() => { setAssunto(assuntoPadrao(l)); setEmail(emailPadrao(l)); }} className={restaurar}>
-                restaurar texto padrão
+              <button onClick={() => usarModeloEmail(modeloEmailId)} disabled={!modeloEmail} className={restaurar}>
+                restaurar texto do modelo
               </button>
             </div>
             <div className="text-xs text-sand-700">Para: {l.clienteEmail || <span className="text-terra-700">cliente sem e-mail cadastrado</span>}</div>
+            <SeletorModelo modelos={modelosEmail} valor={modeloEmailId} onChange={usarModeloEmail} />
             <label className="flex flex-col gap-1 text-xs text-sand-700">
               Assunto
               <input value={assunto} onChange={(e) => setAssunto(e.target.value)} maxLength={150} className={campo} />
@@ -141,13 +136,14 @@ export default function EnviarLembrete({ lembrete: l, onClose, onSend }: Props) 
           <section aria-label="WhatsApp" className="flex flex-col gap-2.5 rounded-2xl border border-sand-200 bg-paper p-4">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-medium">WhatsApp</h3>
-              <button onClick={() => setWhats(whatsPadrao(l))} className={restaurar}>
-                restaurar texto padrão
+              <button onClick={() => usarModeloWhats(modeloWhatsId)} disabled={!modeloWhats} className={restaurar}>
+                restaurar texto do modelo
               </button>
             </div>
             <div className="text-xs text-sand-700">
               Para: {l.clienteWhats ? `${l.clienteWhats} (+${numero})` : <span className="text-terra-700">cliente sem telefone cadastrado</span>}
             </div>
+            <SeletorModelo modelos={modelosWhats} valor={modeloWhatsId} onChange={usarModeloWhats} />
             <label className="flex flex-col gap-1 text-xs text-sand-700">
               Mensagem
               <textarea value={whats} onChange={(e) => setWhats(e.target.value)} maxLength={MAX_WHATS} rows={8} className={`${campo} resize-y leading-relaxed`} />
@@ -184,5 +180,28 @@ export default function EnviarLembrete({ lembrete: l, onClose, onSend }: Props) 
         </div>
       </div>
     </div>
+  );
+}
+
+function SeletorModelo({ modelos, valor, onChange }: { modelos: ModeloMensagem[]; valor: string; onChange: (id: string) => void }) {
+  if (modelos.length === 0) {
+    return <div className="text-xs text-terra-700">Nenhum modelo para este canal. Crie um em “Modelos de mensagem” ou escreva abaixo.</div>;
+  }
+  return (
+    <label className="flex flex-col gap-1 text-xs text-sand-700">
+      Modelo
+      <select
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-10 w-full rounded-lg border border-sand-300 bg-paper px-2.5 text-sm text-sand-950 outline-none focus:border-terra-500"
+      >
+        {modelos.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.nome}
+            {m.padrao ? ' (padrão)' : ''}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

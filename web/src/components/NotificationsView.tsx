@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { Project } from '../types';
 import EnviarLembrete from './EnviarLembrete';
+import ModelosMensagem from './ModelosMensagem';
+import { useModelos } from '../store/useModelos';
 import { buildLembretes, type Lembrete } from '../data/notificacoes';
 import { formatBRL } from '../data/financeiro';
 import { fmtDate, prazoTexto } from '../lib/format';
@@ -22,12 +24,23 @@ export default function NotificationsView({ projects, logs, sentKeys, onSend, on
   const lembretes = buildLembretes(projects);
   const pendentes = lembretes.filter((l) => !sentKeys.has(l.key));
   const [aberto, setAberto] = useState<Lembrete | null>(null);
+  const [verModelos, setVerModelos] = useState(false);
+  const mod = useModelos();
 
   return (
     <div>
       <div className="mb-4 rounded-xl border border-dashed border-sand-300 p-3 text-xs text-sand-700">
         <b>Lembretes de parcela</b> — mostra o sinal e as parcelas que vencem em até 3 dias ou estão atrasados.
         Em “Enviar lembrete” você revisa e edita o e-mail (envio simulado nesta demonstração) e a mensagem do WhatsApp, que abre pronta para você enviar.
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setVerModelos(true)}
+          className="h-10 rounded-lg border border-sand-300 bg-paper px-4 text-sm font-medium text-sand-800 hover:bg-sand-100"
+        >
+          Modelos de mensagem <span className="font-mono text-[11px] text-sand-600">({mod.modelos.length})</span>
+        </button>
       </div>
 
       <h3 className="mb-2 label-mono">Pendentes de envio ({pendentes.length})</h3>
@@ -105,7 +118,17 @@ export default function NotificationsView({ projects, logs, sentKeys, onSend, on
           </div>
         ))}
       </div>
-      {aberto && <EnviarLembrete lembrete={aberto} onClose={() => setAberto(null)} onSend={onSend} />}
+      {aberto && <EnviarLembrete lembrete={aberto} modelos={mod.modelos} onClose={() => setAberto(null)} onSend={onSend} />}
+      {verModelos && (
+        <ModelosMensagem
+          modelos={mod.modelos}
+          onCriar={mod.criar}
+          onEditar={mod.editar}
+          onExcluir={mod.excluir}
+          onDefinirPadrao={mod.definirPadrao}
+          onClose={() => setVerModelos(false)}
+        />
+      )}
     </div>
   );
 }
